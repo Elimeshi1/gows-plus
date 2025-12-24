@@ -11,10 +11,12 @@ import (
 func VideoThumbnail(content []byte, frameNum int, size struct{ Width int }) ([]byte, error) {
 	inputReader := bytes.NewReader(content)
 	var buf bytes.Buffer
-	cmd := ffmpeg_go.Input("pipe:0").
+	cmd := ffmpeg_go.
+		Input("pipe:0").
 		Filter("scale", ffmpeg_go.Args{fmt.Sprintf("%d:-1", size.Width)}).
 		Filter("select", ffmpeg_go.Args{fmt.Sprintf("gte(n,%d)", frameNum)}).
 		Output("pipe:", ffmpeg_go.KwArgs{"vframes": 1, "format": "image2pipe"}).
+		GlobalArgs("-hide_banner", "-loglevel", "error").
 		WithInput(inputReader).
 		WithOutput(&buf).
 		WithErrorOutput(os.Stderr).
