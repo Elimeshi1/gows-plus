@@ -7,6 +7,7 @@ import (
 	"go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"strings"
 	"sync"
 )
 
@@ -54,10 +55,29 @@ type SessionConfig struct {
 	Ignore *IgnoreJidsConfig
 }
 
-func init() {
-	// Firefox (Ubuntu)
-	store.DeviceProps.PlatformType = proto.DeviceProps_FIREFOX.Enum()
-	store.SetOSInfo("Ubuntu", [3]uint32{22, 0, 4})
+func SetDeviceAndBrowser(device string, browser string) {
+	store.DeviceProps.PlatformType = browserPlatformType(browser)
+	store.SetOSInfo(device, [3]uint32{22, 0, 4})
+}
+
+func browserPlatformType(name string) *proto.DeviceProps_PlatformType {
+	name = strings.TrimSpace(name)
+	switch strings.ToLower(name) {
+	case "chrome":
+		return proto.DeviceProps_CHROME.Enum()
+	case "firefox":
+		return proto.DeviceProps_FIREFOX.Enum()
+	case "ie":
+		return proto.DeviceProps_IE.Enum()
+	case "opera":
+		return proto.DeviceProps_OPERA.Enum()
+	case "safari":
+		return proto.DeviceProps_SAFARI.Enum()
+	case "edge":
+		return proto.DeviceProps_EDGE.Enum()
+	default:
+		return proto.DeviceProps_UNKNOWN.Enum()
+	}
 }
 
 func NewSessionManager() *SessionManager {

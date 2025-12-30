@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/devlikeapro/gows/gows"
 	gowsLog "github.com/devlikeapro/gows/log"
 	pb "github.com/devlikeapro/gows/proto"
 	"github.com/devlikeapro/gows/server"
@@ -18,6 +19,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 )
 
@@ -115,6 +117,18 @@ func main() {
 
 	// Start pprof HTTP server if enabled
 	startPprofServer(log)
+
+	device := strings.TrimSpace(os.Getenv("WAHA_CLIENT_DEVICE_NAME"))
+	if device == "" {
+		device = "Ubuntu"
+	}
+	browser := strings.TrimSpace(os.Getenv("WAHA_CLIENT_BROWSER_NAME"))
+	if browser == "" {
+		browser = "Firefox"
+	}
+
+	log.Infof("Using device name: '%s', browser name: '%s'", device, browser)
+	gows.SetDeviceAndBrowser(device, browser)
 
 	// Build the server
 	grpcServer := buildGrpcServer(log)
