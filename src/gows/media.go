@@ -12,25 +12,70 @@ import (
 )
 
 func (gows *GoWS) DownloadAnyMedia(ctx context.Context, msg *waE2E.Message) (data []byte, err error) {
-	if msg == nil {
+	target := unwrapMediaMessage(msg)
+	if target == nil {
 		return nil, whatsmeow.ErrNothingDownloadableFound
 	}
 	switch {
-	case msg.ImageMessage != nil:
-		return gows.Download(ctx, msg.ImageMessage)
-	case msg.VideoMessage != nil:
-		return gows.Download(ctx, msg.VideoMessage)
-	case msg.AudioMessage != nil:
-		return gows.Download(ctx, msg.AudioMessage)
-	case msg.DocumentMessage != nil:
-		return gows.Download(ctx, msg.DocumentMessage)
-	case msg.DocumentWithCaptionMessage != nil:
-		return gows.Download(ctx, msg.DocumentWithCaptionMessage.Message.DocumentMessage)
-	case msg.StickerMessage != nil:
-		return gows.Download(ctx, msg.StickerMessage)
+	case target.ImageMessage != nil:
+		return gows.Download(ctx, target.ImageMessage)
+	case target.VideoMessage != nil:
+		return gows.Download(ctx, target.VideoMessage)
+	case target.AudioMessage != nil:
+		return gows.Download(ctx, target.AudioMessage)
+	case target.DocumentMessage != nil:
+		return gows.Download(ctx, target.DocumentMessage)
+	case target.DocumentWithCaptionMessage != nil:
+		return gows.Download(ctx, target.DocumentWithCaptionMessage.Message.DocumentMessage)
+	case target.StickerMessage != nil:
+		return gows.Download(ctx, target.StickerMessage)
 	default:
 		return nil, whatsmeow.ErrNothingDownloadableFound
 	}
+}
+
+func unwrapMediaMessage(msg *waE2E.Message) *waE2E.Message {
+	if msg == nil {
+		return nil
+	}
+	if hasMediaPayload(msg) {
+		return msg
+	}
+	nested := []*waE2E.Message{
+		getFutureProofMessage(msg.GetEphemeralMessage()),
+		getFutureProofMessage(msg.GetViewOnceMessage()),
+		getFutureProofMessage(msg.GetViewOnceMessageV2()),
+		getFutureProofMessage(msg.GetViewOnceMessageV2Extension()),
+		getFutureProofMessage(msg.GetAssociatedChildMessage()),
+	}
+	for _, child := range nested {
+		if child == nil {
+			continue
+		}
+		if resolved := unwrapMediaMessage(child); resolved != nil {
+			return resolved
+		}
+	}
+	return nil
+}
+
+func getFutureProofMessage(container *waE2E.FutureProofMessage) *waE2E.Message {
+	if container == nil {
+		return nil
+	}
+	return container.Message
+}
+
+func hasMediaPayload(msg *waE2E.Message) bool {
+	if msg == nil {
+		return false
+	}
+	return msg.ImageMessage != nil ||
+		msg.VideoMessage != nil ||
+		msg.AudioMessage != nil ||
+		msg.DocumentMessage != nil ||
+		msg.DocumentWithCaptionMessage != nil ||
+		msg.StickerMessage != nil
 }
 
 func (gows *GoWS) UploadMedia(
