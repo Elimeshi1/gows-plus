@@ -16,6 +16,7 @@ import (
 	"net"
 	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -76,10 +77,12 @@ func buildGrpcServer(log waLog.Logger) *grpc.Server {
 }
 
 var (
-	socket    string
-	pprofFlag bool
-	pprofPort int
-	pprofHost string
+	socket             string
+	pprofFlag          bool
+	pprofPort          int
+	pprofHost          string
+	pprofBlockRate     int
+	pprofMutexFraction int
 )
 
 func init() {
@@ -87,6 +90,8 @@ func init() {
 	flag.BoolVar(&pprofFlag, "pprof", false, "Enable pprof HTTP server")
 	flag.IntVar(&pprofPort, "pprof-port", 6060, "Port for pprof HTTP server")
 	flag.StringVar(&pprofHost, "pprof-host", "localhost", "Host for pprof HTTP server")
+	flag.IntVar(&pprofBlockRate, "pprof-block-rate", 10_000_000, "Set block profile sampling rate in nanoseconds (pprof only)")
+	flag.IntVar(&pprofMutexFraction, "pprof-mutex-fraction", 100, "Set mutex profile sampling rate (1 in N) (pprof only)")
 }
 
 func remove(path string) {
@@ -100,6 +105,12 @@ func main() {
 
 	// Start pprof HTTP server if enabled
 	if pprofFlag {
+		if pprofBlockRate > 0 {
+			runtime.SetBlockProfileRate(pprofBlockRate)
+		}
+		if pprofMutexFraction > 0 {
+			runtime.SetMutexProfileFraction(pprofMutexFraction)
+		}
 		StartPprofServer(log, pprofHost, pprofPort)
 	}
 
