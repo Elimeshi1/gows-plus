@@ -23,4 +23,4 @@ tidy:
 
 build:
 	cd src && \
-	go build -o ../bin/gows main.go
+	go build -o ../bin/gows .
