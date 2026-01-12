@@ -21,6 +21,8 @@ func (gows *GoWS) DownloadAnyMedia(ctx context.Context, msg *waE2E.Message) (dat
 		return gows.Download(ctx, target.ImageMessage)
 	case target.VideoMessage != nil:
 		return gows.Download(ctx, target.VideoMessage)
+	case target.PtvMessage != nil:
+		return gows.Download(ctx, target.PtvMessage)
 	case target.AudioMessage != nil:
 		return gows.Download(ctx, target.AudioMessage)
 	case target.DocumentMessage != nil:

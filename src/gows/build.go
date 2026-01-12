@@ -109,6 +109,8 @@ func ExtractContextInfo(event *events.Message) *waE2E.ContextInfo {
 		return msg.LocationMessage.ContextInfo
 	case msg.VideoMessage != nil:
 		return msg.VideoMessage.ContextInfo
+	case msg.PtvMessage != nil:
+		return msg.PtvMessage.ContextInfo
 	case msg.AudioMessage != nil:
 		return msg.AudioMessage.ContextInfo
 	case msg.DocumentMessage != nil:

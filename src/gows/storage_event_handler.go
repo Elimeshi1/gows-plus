@@ -78,6 +78,8 @@ func isRealMessage(event *events.Message) bool {
 		return true
 	case msg.VideoMessage != nil:
 		return true
+	case msg.PtvMessage != nil:
+		return true
 	case msg.AudioMessage != nil:
 		return true
 	case msg.DocumentMessage != nil:
