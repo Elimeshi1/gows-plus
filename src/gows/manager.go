@@ -118,6 +118,7 @@ func (sm *SessionManager) unlockedBuild(name string, cfg SessionConfig) (*GoWS, 
 
 	err = gows.SetProxyAddress(cfg.Proxy.Url)
 	if err != nil {
+		delete(sm.sessions, name)
 		return nil, err
 	}
 	sm.log.Infof("Session has been built '%s'", name)
@@ -125,28 +126,19 @@ func (sm *SessionManager) unlockedBuild(name string, cfg SessionConfig) (*GoWS, 
 }
 
 func (sm *SessionManager) Start(name string) error {
-	sm.sessionsLock.Lock()
-	defer sm.sessionsLock.Unlock()
-	err := sm.unlockedStart(name)
-	if err != nil {
+	sm.log.Infof("Starting session '%s'...", name)
+	sm.sessionsLock.RLock()
+	goWS, ok := sm.sessions[name]
+	sm.sessionsLock.RUnlock()
+	if !ok {
+		return ErrSessionNotFound
+	}
+	if err := goWS.Start(); err != nil {
 		sm.log.Errorf("Error starting session '%s': %v", name, err)
 		return err
 	}
+	sm.log.Infof("Session started '%s'", name)
 	return nil
-}
-
-func (sm *SessionManager) unlockedStart(name string) error {
-	sm.log.Infof("Starting session '%s'...", name)
-	if goWS, ok := sm.sessions[name]; !ok {
-		return ErrSessionNotFound
-	} else {
-		err := goWS.Start()
-		if err != nil {
-			return err
-		}
-		sm.log.Infof("Session started '%s'", name)
-		return nil
-	}
 }
 
 func (sm *SessionManager) Get(name string) (*GoWS, error) {
@@ -161,16 +153,15 @@ func (sm *SessionManager) Get(name string) (*GoWS, error) {
 }
 
 func (sm *SessionManager) Stop(name string) {
-	sm.sessionsLock.Lock()
-	defer sm.sessionsLock.Unlock()
-	sm.unlockedStop(name)
-}
-
-func (sm *SessionManager) unlockedStop(name string) {
 	sm.log.Infof("Stopping session '%s'...", name)
-	if goWS, ok := sm.sessions[name]; ok {
-		goWS.Stop()
+	sm.sessionsLock.Lock()
+	goWS, ok := sm.sessions[name]
+	if ok {
 		delete(sm.sessions, name)
+	}
+	sm.sessionsLock.Unlock()
+	if ok {
+		goWS.Stop()
 	}
 	sm.log.Infof("Session stopped '%s'", name)
 }
