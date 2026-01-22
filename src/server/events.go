@@ -74,7 +74,7 @@ func (s *Server) addListener(session string, id uuid.UUID) chan interface{} {
 	s.listenersLock.Lock()
 	defer s.listenersLock.Unlock()
 
-	listener := make(chan interface{}, 100)
+	listener := make(chan interface{}, 1000)
 	sessionListeners, ok := s.listeners[session]
 	if !ok {
 		sessionListeners = map[uuid.UUID]chan interface{}{}
