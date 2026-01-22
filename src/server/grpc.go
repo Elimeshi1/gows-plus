@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"sync"
 
 	"github.com/devlikeapro/gows/gows"
@@ -25,6 +26,9 @@ type Server struct {
 	// session id -> id -> event channel
 	listeners     map[string]map[uuid.UUID]chan interface{}
 	listenersLock sync.RWMutex
+	// session id -> cancel func for event subscription
+	eventSubs     map[string]context.CancelFunc
+	eventSubsLock sync.Mutex
 }
 
 func NewServer() *Server {
@@ -33,5 +37,7 @@ func NewServer() *Server {
 		log:           gowsLog.Stdout("gRPC", "INFO", false),
 		listeners:     map[string]map[uuid.UUID]chan interface{}{},
 		listenersLock: sync.RWMutex{},
+		eventSubs:     map[string]context.CancelFunc{},
+		eventSubsLock: sync.Mutex{},
 	}
 }
