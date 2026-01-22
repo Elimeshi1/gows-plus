@@ -38,7 +38,9 @@ func buildGrpcServer(log waLog.Logger) *grpc.Server {
 	// defines the maximum duration a unary RPC is allowed to run.
 	unaryCallTimeout := 30 * time.Minute
 	// limit for large media transfers
-	maxMessageSize := 128 * 1024 * 1024
+	maxMessageSizeMb := 128
+	maxMessageSize := maxMessageSizeMb * 1024 * 1024
+	log.Infof("Maximum gRPC message size set to %d MiB", maxMessageSizeMb)
 
 	// Avoid retaining huge pooled buffers: only reuse up to 1 MiB.
 	bufferPool := wrpc.NewCappedBufferPool(1 << 20)
@@ -101,7 +103,6 @@ func remove(path string) {
 func main() {
 	flag.Parse()
 	log := gowsLog.Stdout("Server", "DEBUG", false)
-	log.Infof("Maximum gRPC message size set to 512 MiB")
 
 	// Start pprof HTTP server if enabled
 	if pprofFlag {
