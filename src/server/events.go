@@ -26,11 +26,15 @@ func (s *Server) safeMarshal(v interface{}) (result string) {
 	return result
 }
 
-func (s *Server) StreamEvents(req *__.Session, stream grpc.ServerStreamingServer[__.EventJson]) error {
-	sessionName := req.GetId()
+func (s *Server) StreamEvents(req *__.StreamEventsRequest, stream grpc.ServerStreamingServer[__.EventJson]) error {
+	sessionName := req.GetSession().GetId()
 	streamId := uuid.New()
 	listener := s.addListener(sessionName, streamId)
 	defer s.removeListener(sessionName, streamId)
+	exclude := make(map[string]struct{}, len(req.GetExclude()))
+	for _, eventType := range req.GetExclude() {
+		exclude[eventType] = struct{}{}
+	}
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -45,6 +49,9 @@ func (s *Server) StreamEvents(req *__.Session, stream grpc.ServerStreamingServer
 			// Remove * at the start if it's *
 			eventType := reflect.TypeOf(event).String()
 			eventType = strings.TrimPrefix(eventType, "*")
+			if _, ok := exclude[eventType]; ok {
+				continue
+			}
 
 			jsonString := s.safeMarshal(event)
 			if jsonString == "" {
