@@ -144,6 +144,7 @@ func BuildSession(
 	dialect string,
 	address string,
 	ignoreJids *IgnoreJidsConfig,
+	storageCfg StorageConfig,
 ) (*GoWS, error) {
 	// Prepare the database
 	container, err := sqlstorage.New(dialect, address, log.Sub("Database"))
@@ -174,7 +175,10 @@ func BuildSession(
 		nil,
 		0,
 	}
-	gows.Storage = BuildStorage(container, gows)
+	if storageCfg == (StorageConfig{}) {
+		storageCfg = DefaultStorageConfig()
+	}
+	gows.Storage = BuildStorage(container, gows, storageCfg)
 	gows.storageEventHandler = &StorageEventHandler{
 		gows:       gows,
 		log:        gows.Log.Sub("Storage"),

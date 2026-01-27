@@ -42,6 +42,7 @@ func (s *Server) StartSession(ctx context.Context, req *__.StartSessionRequest) 
 			Dialect: dialect,
 			Address: address,
 		},
+		Storage: gows.DefaultStorageConfig(),
 		Log: gows.LogConfig{
 			Level: req.Config.Log.Level.String(),
 		},
@@ -57,6 +58,21 @@ func (s *Server) StartSession(ctx context.Context, req *__.StartSessionRequest) 
 			Groups:      req.Config.Ignore.Groups,
 			Newsletters: req.Config.Ignore.Newsletters,
 			Broadcast:   req.Config.Ignore.Broadcast,
+		}
+	}
+
+	if req.Config.Storage != nil {
+		if req.Config.Storage.Messages != nil {
+			cfg.Storage.Messages = req.Config.Storage.GetMessages()
+		}
+		if req.Config.Storage.Groups != nil {
+			cfg.Storage.Groups = req.Config.Storage.GetGroups()
+		}
+		if req.Config.Storage.Chats != nil {
+			cfg.Storage.Chats = req.Config.Storage.GetChats()
+		}
+		if req.Config.Storage.Labels != nil {
+			cfg.Storage.Labels = req.Config.Storage.GetLabels()
 		}
 	}
 

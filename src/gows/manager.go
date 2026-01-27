@@ -25,6 +25,22 @@ type StoreConfig struct {
 	Address string
 }
 
+type StorageConfig struct {
+	Messages bool
+	Groups   bool
+	Chats    bool
+	Labels   bool
+}
+
+func DefaultStorageConfig() StorageConfig {
+	return StorageConfig{
+		Messages: true,
+		Groups:   true,
+		Chats:    true,
+		Labels:   true,
+	}
+}
+
 type LogConfig struct {
 	Level string
 }
@@ -49,10 +65,11 @@ type IgnoreJidsConfig struct {
 
 // SessionConfig contains configuration for a WhatsApp session.
 type SessionConfig struct {
-	Store  StoreConfig
-	Log    LogConfig
-	Proxy  ProxyConfig
-	Ignore *IgnoreJidsConfig
+	Store   StoreConfig
+	Storage StorageConfig
+	Log     LogConfig
+	Proxy   ProxyConfig
+	Ignore  *IgnoreJidsConfig
 }
 
 func SetDeviceAndBrowser(device string, browser string) {
@@ -110,7 +127,7 @@ func (sm *SessionManager) unlockedBuild(name string, cfg SessionConfig) (*GoWS, 
 
 	dialect := cfg.Store.Dialect
 	address := cfg.Store.Address
-	gows, err := BuildSession(ctx, log.Sub(name), dialect, address, cfg.Ignore)
+	gows, err := BuildSession(ctx, log.Sub(name), dialect, address, cfg.Ignore, cfg.Storage)
 	if err != nil {
 		return nil, err
 	}

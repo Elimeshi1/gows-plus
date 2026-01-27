@@ -220,6 +220,13 @@ message SessionStoreConfig {
   string address = 3;
 }
 
+message SessionStorageConfig {
+  optional bool messages = 1;
+  optional bool groups = 2;
+  optional bool chats = 3;
+  optional bool labels = 4;
+}
+
 message SessionProxyConfig {
   string url = 1;
 }
@@ -236,6 +243,7 @@ message SessionConfig {
   SessionLogConfig log = 2;
   SessionProxyConfig proxy = 3;
   optional SessionIgnoreJidsConfig ignore = 4;
+  optional SessionStorageConfig storage = 5;
 }
 
 message StartSessionRequest {

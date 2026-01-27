@@ -140,6 +140,27 @@ func ExtractEphemeralSettingsFromGroup(group *types.GroupInfo) *storage.StoredCh
 	return setting
 }
 
+func ExtractEphemeralSettingsFromGroupUpdate(update *events.GroupInfo) *storage.StoredChatEphemeralSetting {
+	if update == nil || update.Ephemeral == nil {
+		return nil
+	}
+	if !update.Ephemeral.IsEphemeral {
+		return storage.NotEphemeral(update.JID)
+	}
+
+	setting := &storage.StoredChatEphemeralSetting{
+		ID:          update.JID,
+		IsEphemeral: true,
+		Setting: &storage.EphemeralSetting{
+			Initiator:     waE2E.DisappearingMode_CHANGED_IN_CHAT.Enum(),
+			Trigger:       waE2E.DisappearingMode_CHAT_SETTING.Enum(),
+			InitiatedByMe: proto.Bool(false),
+			Expiration:    update.Ephemeral.DisappearingTimer,
+		},
+	}
+	return setting
+}
+
 func populateFromDisappearingMode(setting *storage.EphemeralSetting, mode *waE2E.DisappearingMode) {
 	if mode == nil {
 		return
