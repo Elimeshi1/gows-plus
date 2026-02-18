@@ -1,5 +1,5 @@
 # Use the official Golang image
-FROM golang:1.24-bookworm as builder
+FROM golang:1.25-bookworm as builder
 
 # Install required packages
 RUN apt-get update && apt-get install -y \
