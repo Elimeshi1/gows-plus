@@ -377,6 +377,11 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 		case __.MediaType_VIDEO:
 			// NOTE: Keep MediaType_VIDEO and MediaType_PTV in sync
 			mediaType = whatsmeow.MediaVideo
+			var durationSeconds *uint32
+			if req.Media.Video != nil && req.Media.Video.Duration != 0 {
+				seconds := uint32(req.Media.Video.Duration)
+				durationSeconds = &seconds
+			}
 			// Upload
 			mediaResponse, err = cli.UploadMedia(ctx, jid, req.Media.Content, mediaType)
 			if err != nil {
@@ -403,12 +408,18 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 				FileEncSHA256: mediaResponse.FileEncSHA256,
 				FileSHA256:    mediaResponse.FileSHA256,
 				FileLength:    &mediaResponse.FileLength,
+				Seconds:       durationSeconds,
 				JPEGThumbnail: thumbnail,
 			}
 			message.VideoMessage.ContextInfo = contextInfo
 		case __.MediaType_PTV:
 			// NOTE: Keep MediaType_VIDEO and MediaType_PTV in sync
 			mediaType = whatsmeow.MediaVideo
+			var durationSeconds *uint32
+			if req.Media.Video != nil && req.Media.Video.Duration != 0 {
+				seconds := uint32(req.Media.Video.Duration)
+				durationSeconds = &seconds
+			}
 			// Upload
 			mediaResponse, err = cli.UploadMedia(ctx, jid, req.Media.Content, mediaType)
 			if err != nil {
@@ -434,6 +445,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 				FileEncSHA256: mediaResponse.FileEncSHA256,
 				FileSHA256:    mediaResponse.FileSHA256,
 				FileLength:    &mediaResponse.FileLength,
+				Seconds:       durationSeconds,
 				JPEGThumbnail: thumbnail,
 			}
 			message.PtvMessage.ContextInfo = contextInfo

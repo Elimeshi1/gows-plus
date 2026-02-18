@@ -324,6 +324,10 @@ message AudioInfo {
   bytes waveform = 2;
 }
 
+message VideoInfo {
+  float duration = 1;
+}
+
 message Media {
   bytes content = 1;
   MediaType type = 2;
@@ -331,6 +335,7 @@ message Media {
   AudioInfo audio = 4;
   string filename = 5;
   string contentPath = 6;
+  VideoInfo video = 7;
 }
 
 message LinkPreview {
