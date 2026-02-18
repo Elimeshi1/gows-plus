@@ -48,17 +48,26 @@ func (gows *GoWS) BuildEdit(chat types.JID, id types.MessageID, newContent *waE2
 	if chat.Server == types.GroupServer {
 		key.Participant = proto.String(gows.int.GetOwnID().ToNonAD().String())
 	}
-	return &waE2E.Message{
-		EditedMessage: &waE2E.FutureProofMessage{
-			Message: &waE2E.Message{
-				ProtocolMessage: &waE2E.ProtocolMessage{
-					Key:           key,
-					Type:          waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(),
-					EditedMessage: newContent,
-					TimestampMS:   proto.Int64(time.Now().UnixMilli()),
+	protocol := &waE2E.ProtocolMessage{
+		Key:           key,
+		Type:          waE2E.ProtocolMessage_MESSAGE_EDIT.Enum(),
+		EditedMessage: newContent,
+		TimestampMS:   proto.Int64(time.Now().UnixMilli()),
+	}
+
+	// Keep newsletter edit encoding compatible with whatsmeow's newsletter sender path.
+	if chat.Server == types.NewsletterServer {
+		return &waE2E.Message{
+			EditedMessage: &waE2E.FutureProofMessage{
+				Message: &waE2E.Message{
+					ProtocolMessage: protocol,
 				},
 			},
-		},
+		}
+	}
+
+	return &waE2E.Message{
+		ProtocolMessage: protocol,
 	}
 }
 
