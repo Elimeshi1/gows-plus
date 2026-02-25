@@ -1,7 +1,10 @@
 package sqlstorage
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -32,9 +35,17 @@ func (s SqlMessageStore) UpsertOneMessage(msg *storage.StoredMessage) (err error
 }
 
 func (s SqlMessageStore) GetAllMessages(filters storage.MessageFilter, sort storage.Sort, pagination storage.Pagination) ([]*storage.StoredMessage, error) {
+	primaryExpr, err := s.primaryJIDExpression(s.table.Name)
+	if err != nil {
+		return nil, err
+	}
 	conditions := make([]sq.Sqlizer, 0)
 	if filters.Jid != nil {
-		conditions = append(conditions, sq.Eq{"jid": filters.Jid})
+		canonical, err := s.canonicalizeJID(*filters.Jid)
+		if err != nil {
+			return nil, err
+		}
+		conditions = append(conditions, sq.Expr(primaryExpr+" = ?", canonical.String()))
 	}
 	if filters.TimestampGte != nil {
 		conditions = append(conditions, sq.GtOrEq{"timestamp": filters.TimestampGte})
@@ -101,19 +112,25 @@ func (s SqlMessageStore) DeleteMessage(id types.MessageID) error {
 }
 
 // getLastMessagesPostgresSubquery generates the subquery for PostgreSQL to fetch the ID of the last message per chat.
-func (s SqlMessageStore) getLastMessagesPostgresSubquery() *sq.SelectBuilder {
-	query := sq.Select("DISTINCT ON (jid) id").
+func (s SqlMessageStore) getLastMessagesPostgresSubquery(primaryExpr string) *sq.SelectBuilder {
+	query := sq.Select("DISTINCT ON (" + primaryExpr + ") id").
 		From(s.table.Name).
 		Where("is_real = true").
-		OrderBy("jid, timestamp DESC")
+		OrderByClause(primaryExpr).
+		OrderByClause("timestamp DESC")
 	return &query
 }
 
 // getLastMessagesSQLiteSubquery generates the subquery for SQLite3 to fetch the ID of the last message per chat.
-func (s SqlMessageStore) getLastMessagesSQLiteSubquery() *sq.SelectBuilder {
+func (s SqlMessageStore) getLastMessagesSQLiteSubquery(primaryExpr string) *sq.SelectBuilder {
 	query := sq.Select("id").
 		FromSelect(
-			sq.Select("id", "jid", "timestamp", "ROW_NUMBER() OVER (PARTITION BY jid ORDER BY timestamp DESC) as rn").
+			sq.Select(
+				"id",
+				"jid",
+				"timestamp",
+				"ROW_NUMBER() OVER (PARTITION BY ("+primaryExpr+") ORDER BY timestamp DESC) as rn",
+			).
 				From(s.table.Name).
 				Where("is_real = true"),
 			"sub").
@@ -122,12 +139,12 @@ func (s SqlMessageStore) getLastMessagesSQLiteSubquery() *sq.SelectBuilder {
 }
 
 // getLastMessageSubquery selects the appropriate subquery based on the database type.
-func (s SqlMessageStore) getLastMessageSubquery() (*sq.SelectBuilder, error) {
+func (s SqlMessageStore) getLastMessageSubquery(primaryExpr string) (*sq.SelectBuilder, error) {
 	switch s.db.DriverName() {
 	case "postgres":
-		return s.getLastMessagesPostgresSubquery(), nil
+		return s.getLastMessagesPostgresSubquery(primaryExpr), nil
 	case "sqlite3":
-		return s.getLastMessagesSQLiteSubquery(), nil
+		return s.getLastMessagesSQLiteSubquery(primaryExpr), nil
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", s.db.DriverName())
 	}
@@ -135,8 +152,12 @@ func (s SqlMessageStore) getLastMessageSubquery() (*sq.SelectBuilder, error) {
 
 // GetLastMessagesInChats retrieves the last messages in chats based on filtering, sorting, and pagination.
 func (s SqlMessageStore) GetLastMessagesInChats(filter storage.ChatFilter, sortBy storage.Sort, pagination storage.Pagination) ([]*storage.StoredMessage, error) {
+	primaryExpr, err := s.primaryJIDExpression(s.table.Name)
+	if err != nil {
+		return nil, err
+	}
 	// Generate the subquery to get the ID of the last message per chat
-	subQuery, err := s.getLastMessageSubquery()
+	subQuery, err := s.getLastMessageSubquery(primaryExpr)
 	if err != nil {
 		return nil, err
 	}
@@ -149,10 +170,107 @@ func (s SqlMessageStore) GetLastMessagesInChats(filter storage.ChatFilter, sortB
 	sql := sq.Select("data").
 		From(s.table.Name).
 		Where("id IN (" + subQueryText + ")")
-	if filter.Jids != nil && len(filter.Jids) > 0 {
-		// jid in jids array
-		sql = sql.Where(sq.Eq{"jid": filter.Jids})
+	if len(filter.Jids) > 0 {
+		canonical, err := s.canonicalJIDStrings(filter.Jids)
+		if err != nil {
+			return nil, err
+		}
+		expr, args := buildInExpression(primaryExpr, canonical)
+		sql = sql.Where(sq.Expr(expr, args...))
 	}
 
-	return s.Retrieve(sql, pagination, []storage.Sort{sortBy})
+	messages, err := s.Retrieve(sql, pagination, []storage.Sort{sortBy})
+	if err != nil {
+		return nil, err
+	}
+	for _, msg := range messages {
+		canonical, err := s.canonicalizeJID(msg.Info.Chat)
+		if err != nil {
+			return nil, err
+		}
+		msg.Info.Chat = canonical
+	}
+
+	return messages, nil
+}
+
+func (s SqlMessageStore) canonicalizeJID(jid types.JID) (types.JID, error) {
+	if jid.Server != types.HiddenUserServer {
+		return jid, nil
+	}
+	query := sq.Select("pn").
+		From("whatsmeow_lid_map").
+		Where(sq.Eq{"lid": jid.User}).
+		Limit(1)
+	sqlText, args, err := query.ToSql()
+	if err != nil {
+		return types.JID{}, err
+	}
+	var pn string
+	err = s.db.Get(&pn, sqlText, args...)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return jid, nil
+	case err != nil:
+		return types.JID{}, err
+	case pn == "":
+		return jid, nil
+	}
+	canonical := types.JID{
+		User:   pn,
+		Server: types.DefaultUserServer,
+		Device: jid.Device,
+	}
+	return canonical, nil
+}
+
+func (s SqlMessageStore) canonicalJIDStrings(jids []types.JID) ([]string, error) {
+	result := make([]string, 0, len(jids))
+	seen := make(map[string]struct{}, len(jids))
+	for _, jid := range jids {
+		canonical, err := s.canonicalizeJID(jid)
+		if err != nil {
+			return nil, err
+		}
+		str := canonical.String()
+		if _, ok := seen[str]; ok {
+			continue
+		}
+		seen[str] = struct{}{}
+		result = append(result, str)
+	}
+	return result, nil
+}
+
+func (s SqlMessageStore) primaryJIDExpression(tableAlias string) (string, error) {
+	column := fmt.Sprintf("%s.jid", tableAlias)
+	userExpr, err := s.jidUserExpression(column)
+	if err != nil {
+		return "", err
+	}
+	pnLookup := fmt.Sprintf("(SELECT pn FROM whatsmeow_lid_map WHERE lid = %s LIMIT 1)", userExpr)
+	pnJID := fmt.Sprintf("(%s || '@%s')", pnLookup, types.DefaultUserServer)
+	expr := fmt.Sprintf("CASE WHEN %s LIKE '%%%%@lid' THEN COALESCE(%s, %s) ELSE %s END", column, pnJID, column, column)
+	return expr, nil
+}
+
+func (s SqlMessageStore) jidUserExpression(column string) (string, error) {
+	switch s.db.DriverName() {
+	case "postgres":
+		return fmt.Sprintf("split_part(%s::text, '@', 1)", column), nil
+	case "sqlite3":
+		return fmt.Sprintf("substr(%s, 1, instr(%s, '@') - 1)", column, column), nil
+	default:
+		return "", fmt.Errorf("unsupported database driver: %s", s.db.DriverName())
+	}
+}
+
+func buildInExpression(expr string, values []string) (string, []interface{}) {
+	placeholders := make([]string, len(values))
+	args := make([]interface{}, len(values))
+	for i, value := range values {
+		placeholders[i] = "?"
+		args[i] = value
+	}
+	return fmt.Sprintf("%s IN (%s)", expr, strings.Join(placeholders, ",")), args
 }
