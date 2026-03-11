@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -170,18 +171,15 @@ func (s SqlMessageStore) getLastMessageSubquery(primaryExpr string, priorityExpr
 
 // GetLastMessagesInChats retrieves the last messages in chats based on filtering, sorting, and pagination.
 func (s SqlMessageStore) GetLastMessagesInChats(filter storage.ChatFilter, sortBy storage.Sort, pagination storage.Pagination, merge bool) ([]*storage.StoredMessage, error) {
-	primaryExpr := fmt.Sprintf("%s.jid", s.table.Name)
-	var priorityExpr string
+	// When merging, replace the CASE WHEN correlated-subquery approach with two
+	// separate index-friendly queries (non-lid / lid) merged in memory by timestamp.
 	if merge {
-		var err error
-		primaryExpr, err = s.primaryJIDExpression(s.table.Name)
-		if err != nil {
-			return nil, err
-		}
-		priorityExpr = s.primaryPriorityExpression(fmt.Sprintf("%s.jid", s.table.Name))
+		return s.getLastMessagesInChatsWithMerge(filter, sortBy, pagination)
 	}
-	// Generate the subquery to get the ID of the last message per chat
-	subQuery, err := s.getLastMessageSubquery(primaryExpr, priorityExpr)
+
+	// merge=false: simple DISTINCT ON (jid) with no CASE expression — index-friendly as-is
+	primaryExpr := fmt.Sprintf("%s.jid", s.table.Name)
+	subQuery, err := s.getLastMessageSubquery(primaryExpr, "")
 	if err != nil {
 		return nil, err
 	}
@@ -190,45 +188,194 @@ func (s SqlMessageStore) GetLastMessagesInChats(filter storage.ChatFilter, sortB
 		return nil, err
 	}
 
-	// Main query to get the full details of the last messages
 	sql := sq.Select("data").
 		From(s.table.Name).
 		Where("id IN (" + subQueryText + ")")
 	if len(filter.Jids) > 0 {
-		rawJidColumn := fmt.Sprintf("%s.jid", s.table.Name)
-		var allJidStrs []string
-		if merge {
-			// Expand each canonical JID to include its known LID variants so we can
-			// filter on the raw jid column and let the (jid, timestamp) index be used.
-			allJidStrs, err = s.expandJIDsWithLIDs(filter.Jids)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			allJidStrs, err = s.targetJIDStrings(filter.Jids, false)
-			if err != nil {
-				return nil, err
-			}
+		jidStrs, err := s.targetJIDStrings(filter.Jids, false)
+		if err != nil {
+			return nil, err
 		}
-		expr, args := buildInExpression(rawJidColumn, allJidStrs)
+		expr, args := buildInExpression(fmt.Sprintf("%s.jid", s.table.Name), jidStrs)
 		sql = sql.Where(sq.Expr(expr, args...))
 	}
 
-	messages, err := s.Retrieve(sql, pagination, []storage.Sort{sortBy})
-	if err != nil {
-		return nil, err
-	}
-	if merge {
-		for _, msg := range messages {
-			canonical, err := s.canonicalizeJID(msg.Info.Chat)
+	return s.Retrieve(sql, pagination, []storage.Sort{sortBy})
+}
+
+// getLastMessagesInChatsWithMerge replaces the CASE WHEN correlated-subquery approach
+// with two separate queries (non-lid and lid) merged in memory by timestamp.
+// Each subquery uses the (jid, timestamp) index directly with no per-row subqueries.
+// Works for both PostgreSQL (DISTINCT ON) and SQLite (ROW_NUMBER window function).
+func (s SqlMessageStore) getLastMessagesInChatsWithMerge(filter storage.ChatFilter, sortBy storage.Sort, pagination storage.Pagination) ([]*storage.StoredMessage, error) {
+	// When a JID filter is provided, expand each JID to its canonical form + LID variants
+	// so each subquery gets a targeted jid IN (...) filter on the raw column.
+	var nonLidJIDFilter []string
+	var lidJIDFilter []string
+	hasJIDFilter := len(filter.Jids) > 0
+
+	if hasJIDFilter {
+		for _, jid := range filter.Jids {
+			canonical, err := s.canonicalizeJID(jid)
 			if err != nil {
 				return nil, err
 			}
-			msg.Info.Chat = canonical
+			nonLidJIDFilter = append(nonLidJIDFilter, canonical.String())
+			lids, err := s.reverseLookupLIDs(canonical.User)
+			if err != nil {
+				return nil, err
+			}
+			lidJIDFilter = append(lidJIDFilter, lids...)
 		}
 	}
 
-	return messages, nil
+	// Query 1: latest non-@lid message per chat — uses (jid, timestamp) index efficiently
+	nonLidMessages, err := s.fetchDistinctLatestByJID("jid NOT LIKE '%@lid'", nonLidJIDFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Query 2: latest @lid message per chat — only when relevant (small set)
+	var lidMessages []*storage.StoredMessage
+	if !hasJIDFilter || len(lidJIDFilter) > 0 {
+		lidMessages, err = s.fetchDistinctLatestByJID("jid LIKE '%@lid'", lidJIDFilter)
+		if err != nil {
+			return nil, err
+		}
+		// Canonicalize @lid → @s.whatsapp.net so timestamps can be compared with non-lid results
+		for _, msg := range lidMessages {
+			msg.Info.Chat, err = s.canonicalizeJID(msg.Info.Chat)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Merge: per canonical JID keep whichever message has the later timestamp
+	merged := mergeLastMessages(nonLidMessages, lidMessages)
+
+	// Sort in memory (mirrors what the DB ORDER BY would have produced)
+	sort.Slice(merged, func(i, j int) bool {
+		if sortBy.Order == storage.SortDesc {
+			return merged[i].Info.Timestamp.After(merged[j].Info.Timestamp)
+		}
+		return merged[i].Info.Timestamp.Before(merged[j].Info.Timestamp)
+	})
+
+	// Paginate in memory
+	start := int(pagination.Offset)
+	if start >= len(merged) {
+		return nil, nil
+	}
+	end := len(merged)
+	if pagination.Limit > 0 {
+		end = start + int(pagination.Limit)
+		if end > len(merged) {
+			end = len(merged)
+		}
+	}
+	return merged[start:end], nil
+}
+
+// fetchDistinctLatestByJID gets the latest message ID per chat matching jidCondition,
+// optionally filtered to jidFilter values, then fetches full message data by primary key.
+// Uses DISTINCT ON for PostgreSQL and ROW_NUMBER() OVER (PARTITION BY jid) for SQLite.
+func (s SqlMessageStore) fetchDistinctLatestByJID(jidCondition string, jidFilter []string) ([]*storage.StoredMessage, error) {
+	var sub sq.SelectBuilder
+	switch s.db.DriverName() {
+	case "postgres":
+		sub = sq.Select("DISTINCT ON (jid) id").
+			From(s.table.Name).
+			Where("is_real = true").
+			Where(jidCondition).
+			OrderByClause("jid").
+			OrderByClause("timestamp DESC")
+	case "sqlite3":
+		sub = sq.Select("id").
+			FromSelect(
+				sq.Select("id", "ROW_NUMBER() OVER (PARTITION BY jid ORDER BY timestamp DESC) as rn").
+					From(s.table.Name).
+					Where("is_real = true").
+					Where(jidCondition),
+				"sub").
+			Where("rn = 1")
+	default:
+		return nil, fmt.Errorf("unsupported database driver: %s", s.db.DriverName())
+	}
+	if len(jidFilter) > 0 {
+		expr, args := buildInExpression("jid", jidFilter)
+		sub = sub.Where(sq.Expr(expr, args...))
+	}
+	subSQL, subArgs, err := sub.ToSql()
+	if err != nil {
+		return nil, err
+	}
+
+	// Execute the subquery first to get IDs, then fetch data by primary key.
+	// This avoids embedding a parameterized subquery inside another parameterized query.
+	var ids []string
+	if err := s.db.Select(&ids, subSQL, subArgs...); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	expr, args := buildInExpression("id", ids)
+	mainQuery := sq.Select("data").
+		From(s.table.Name).
+		Where(sq.Expr(expr, args...))
+	return s.Retrieve(mainQuery, storage.Pagination{}, nil)
+}
+
+// mergeLastMessages combines two message slices keyed by canonical chat JID,
+// keeping whichever entry has the later timestamp when both sets contain the same chat.
+func mergeLastMessages(primary, secondary []*storage.StoredMessage) []*storage.StoredMessage {
+	byJID := make(map[string]*storage.StoredMessage, len(primary))
+	for _, msg := range primary {
+		byJID[msg.Info.Chat.String()] = msg
+	}
+	for _, msg := range secondary {
+		key := msg.Info.Chat.String()
+		if existing, ok := byJID[key]; !ok || msg.Info.Timestamp.After(existing.Info.Timestamp) {
+			byJID[key] = msg
+		}
+	}
+	result := make([]*storage.StoredMessage, 0, len(byJID))
+	for _, msg := range byJID {
+		result = append(result, msg)
+	}
+	return result
+}
+
+// expandJIDsWithLIDs returns canonical JID strings plus all known @lid JID strings
+// for each JID in the input, deduplicated. Used to build a raw jid IN (...) filter
+// that avoids CASE expressions on the indexed column.
+func (s SqlMessageStore) expandJIDsWithLIDs(jids []types.JID) ([]string, error) {
+	seen := make(map[string]struct{})
+	var result []string
+	for _, jid := range jids {
+		canonical, err := s.canonicalizeJID(jid)
+		if err != nil {
+			return nil, err
+		}
+		str := canonical.String()
+		if _, ok := seen[str]; !ok {
+			seen[str] = struct{}{}
+			result = append(result, str)
+		}
+		lids, err := s.reverseLookupLIDs(canonical.User)
+		if err != nil {
+			return nil, err
+		}
+		for _, lid := range lids {
+			if _, ok := seen[lid]; !ok {
+				seen[lid] = struct{}{}
+				result = append(result, lid)
+			}
+		}
+	}
+	return result, nil
 }
 
 func (s SqlMessageStore) canonicalizeJID(jid types.JID) (types.JID, error) {
