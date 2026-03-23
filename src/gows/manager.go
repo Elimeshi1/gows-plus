@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	gowsLog "github.com/devlikeapro/gows/log"
-	"go.mau.fi/whatsmeow/binary/proto"
+	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/store"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"strings"
@@ -77,23 +77,23 @@ func SetDeviceAndBrowser(device string, browser string) {
 	store.SetOSInfo(device, [3]uint32{22, 0, 4})
 }
 
-func browserPlatformType(name string) *proto.DeviceProps_PlatformType {
+func browserPlatformType(name string) *waCompanionReg.DeviceProps_PlatformType {
 	name = strings.TrimSpace(name)
 	switch strings.ToLower(name) {
 	case "chrome":
-		return proto.DeviceProps_CHROME.Enum()
+		return waCompanionReg.DeviceProps_CHROME.Enum()
 	case "firefox":
-		return proto.DeviceProps_FIREFOX.Enum()
+		return waCompanionReg.DeviceProps_FIREFOX.Enum()
 	case "ie":
-		return proto.DeviceProps_IE.Enum()
+		return waCompanionReg.DeviceProps_IE.Enum()
 	case "opera":
-		return proto.DeviceProps_OPERA.Enum()
+		return waCompanionReg.DeviceProps_OPERA.Enum()
 	case "safari":
-		return proto.DeviceProps_SAFARI.Enum()
+		return waCompanionReg.DeviceProps_SAFARI.Enum()
 	case "edge":
-		return proto.DeviceProps_EDGE.Enum()
+		return waCompanionReg.DeviceProps_EDGE.Enum()
 	default:
-		return proto.DeviceProps_UNKNOWN.Enum()
+		return waCompanionReg.DeviceProps_UNKNOWN.Enum()
 	}
 }
 
