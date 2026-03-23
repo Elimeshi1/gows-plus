@@ -77,6 +77,10 @@ func SetDeviceAndBrowser(device string, browser string) {
 	store.SetOSInfo(device, [3]uint32{22, 0, 4})
 }
 
+func GetDeviceProps() *waCompanionReg.DeviceProps {
+	return store.DeviceProps
+}
+
 func browserPlatformType(name string) *waCompanionReg.DeviceProps_PlatformType {
 	name = strings.TrimSpace(name)
 	switch strings.ToLower(name) {
