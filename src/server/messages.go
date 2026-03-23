@@ -315,11 +315,20 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 			if err != nil {
 				cli.Log.Errorf("Failed to generate thumbnail: %v", err)
 			}
+
+			// Get image dimensions
+			imgSize, err := media.CurrentSize(req.Media.Content)
+			if err != nil {
+				cli.Log.Errorf("Failed to get image dimensions: %v", err)
+			}
+
 			// Attach
 			message.ImageMessage = &waE2E.ImageMessage{
 				Caption:       proto.String(req.Text),
 				Mimetype:      proto.String(req.Media.Mimetype),
 				JPEGThumbnail: thumbnail,
+				Height:        proto.Uint32(imgSize.Height),
+				Width:         proto.Uint32(imgSize.Width),
 				URL:           &mediaResponse.URL,
 				DirectPath:    &mediaResponse.DirectPath,
 				FileSHA256:    mediaResponse.FileSHA256,
