@@ -84,6 +84,8 @@ func isRealMessage(event *events.Message) bool {
 		return true
 	case msg.DocumentMessage != nil:
 		return true
+	case msg.DocumentWithCaptionMessage != nil:
+		return true
 	case msg.StickerMessage != nil:
 		return true
 	case msg.ContactsArrayMessage != nil:
