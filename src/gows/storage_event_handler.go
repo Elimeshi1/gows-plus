@@ -106,6 +106,8 @@ func isRealMessage(event *events.Message) bool {
 		return true
 	case msg.PollCreationMessageV5 != nil:
 		return true
+	case msg.ButtonsResponseMessage != nil:
+		return true
 	default:
 		return false
 	}
