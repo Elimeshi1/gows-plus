@@ -60,4 +60,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260406050113-8b41ccad27ae
+replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260414085946-9b74dbeccee1
