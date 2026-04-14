@@ -17,7 +17,7 @@ build-proto:
 		--experimental_allow_proto3_optional \
 		 proto/*.proto
 
-tidy:
+tidy: build-proto
 	cd src && \
 	go mod tidy
 
