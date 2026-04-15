@@ -293,7 +293,7 @@ func (s SqlMessageStore) fetchDistinctLatestByJID(jidCondition string, jidFilter
 	case "sqlite3":
 		sub = sq.Select("id").
 			FromSelect(
-				sq.Select("id", "ROW_NUMBER() OVER (PARTITION BY jid ORDER BY timestamp DESC) as rn").
+				sq.Select("id", "jid", "ROW_NUMBER() OVER (PARTITION BY jid ORDER BY timestamp DESC) as rn").
 					From(s.table.Name).
 					Where("is_real = true").
 					Where(jidCondition),
