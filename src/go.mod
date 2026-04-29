@@ -2,6 +2,8 @@ module github.com/devlikeapro/gows
 
 go 1.25.0
 
+toolchain go1.26.2
+
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/avast/retry-go v3.0.0+incompatible
