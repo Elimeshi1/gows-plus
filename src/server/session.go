@@ -105,12 +105,10 @@ func (s *Server) StartSession(ctx context.Context, req *__.StartSessionRequest) 
 	}
 	s.eventSubsLock.Unlock()
 
-	// Start the session in the background
-	go func() {
-		if startErr := s.Sm.Start(session); startErr != nil {
-			s.log.Errorf("Error starting session '%s': %v", session, startErr)
-		}
-	}()
+	if startErr := s.Sm.Start(session); startErr != nil {
+		s.log.Errorf("Error starting session '%s': %v", session, startErr)
+		return nil, startErr
+	}
 
 	return &__.Empty{}, nil
 }
