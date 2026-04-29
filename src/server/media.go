@@ -3,12 +3,15 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"github.com/devlikeapro/gows/proto"
-	"go.mau.fi/whatsmeow/proto/waE2E"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"os"
 	"time"
+
+	"github.com/devlikeapro/gows/storage"
+	__ "github.com/devlikeapro/gows/proto"
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const downloadMediaTimeout = 10 * time.Minute
@@ -28,9 +31,10 @@ func (s *Server) DownloadMedia(ctx context.Context, req *__.DownloadMediaRequest
 	}
 
 	// If parsing JSON failed - fetch it from storage
+	var storedMessage *storage.StoredMessage
 	if msg == nil && req.MessageId != "" {
 		cli.Log.Debugf("Fetching message from storage '%s'", req.MessageId)
-		storedMessage, err := cli.Storage.Messages.GetMessageWithRetries(req.GetMessageId())
+		storedMessage, err = cli.Storage.Messages.GetMessageWithRetries(req.GetMessageId())
 		if err != nil {
 			cli.Log.Warnf("Failed to fetch message '%s' from storage: %v", req.MessageId, err)
 		}
@@ -58,7 +62,13 @@ func (s *Server) DownloadMedia(ctx context.Context, req *__.DownloadMediaRequest
 		return nil, status.Error(codes.DeadlineExceeded, "download media timed out before start")
 	}
 
-	resp, err := cli.DownloadAnyMedia(ctx, msg)
+	// Build MessageInfo for the media-retry protocol (used on HTTP 403).
+	// We always know chat JID and message ID from the request.
+	// IsFromMe=false because inbound messages are the ones that hit 403.
+	// If we fetched from storage we already have the full Info there.
+	msgInfo := buildMessageInfo(req.GetJid(), req.GetMessageId(), storedMessage)
+
+	resp, err := cli.DownloadAnyMediaWithRetry(ctx, msg, msgInfo)
 	if err != nil {
 		if ctx.Err() != nil {
 			cli.Log.Warnf("Media download for '%s' canceled: %v", req.MessageId, ctx.Err())
@@ -89,4 +99,28 @@ func BuildMessage(data string) (*waE2E.Message, error) {
 		return nil, err
 	}
 	return &message, nil
+}
+
+// buildMessageInfo constructs a *types.MessageInfo for use with the media-retry protocol.
+// It prefers the full info from storage (which includes IsGroup, IsFromMe, Sender).
+// When storage is unavailable it builds a minimal info from the request fields.
+func buildMessageInfo(jid, messageID string, stored *storage.StoredMessage) *types.MessageInfo {
+	if stored != nil && stored.Message != nil {
+		info := stored.Message.Info
+		return &info
+	}
+	chatJID, err := types.ParseJID(jid)
+	if err != nil {
+		return &types.MessageInfo{
+			ID: types.MessageID(messageID),
+		}
+	}
+	return &types.MessageInfo{
+		MessageSource: types.MessageSource{
+			Chat:     chatJID,
+			IsFromMe: false,
+			IsGroup:  chatJID.Server == types.GroupServer,
+		},
+		ID: types.MessageID(messageID),
+	}
 }

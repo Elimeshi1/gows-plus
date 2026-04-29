@@ -2,13 +2,17 @@ package gows
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
+
 	"github.com/devlikeapro/gows/media"
 	"github.com/gogo/protobuf/proto"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waMmsRetry"
 	"go.mau.fi/whatsmeow/types"
-	"time"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 func (gows *GoWS) DownloadAnyMedia(ctx context.Context, msg *waE2E.Message) (data []byte, err error) {
@@ -33,6 +37,155 @@ func (gows *GoWS) DownloadAnyMedia(ctx context.Context, msg *waE2E.Message) (dat
 		return gows.Download(ctx, target.StickerMessage)
 	default:
 		return nil, whatsmeow.ErrNothingDownloadableFound
+	}
+}
+
+// DownloadAnyMediaWithRetry wraps DownloadAnyMedia and, on HTTP 403, requests the
+// sender's phone to re-upload the media via whatsmeow's media-retry protocol.
+// On a successful retry the fresh DirectPath is used for a second download attempt.
+func (gows *GoWS) DownloadAnyMediaWithRetry(
+	ctx context.Context,
+	msg *waE2E.Message,
+	info *types.MessageInfo,
+) ([]byte, error) {
+	data, err := gows.DownloadAnyMedia(ctx, msg)
+	if !errors.Is(err, whatsmeow.ErrMediaDownloadFailedWith403) {
+		return data, err
+	}
+
+	mediaKey := extractMediaKey(msg)
+	if len(mediaKey) == 0 {
+		gows.Log.Warnf("No media key found for retry of '%s', returning original 403", info.ID)
+		return nil, err
+	}
+
+	gows.Log.Infof("Got 403 for '%s', requesting media re-upload from phone", info.ID)
+	retryEvt, retryErr := gows.requestAndWaitForMediaRetry(ctx, info, mediaKey)
+	if retryErr != nil {
+		gows.Log.Errorf("Media retry request for '%s' failed: %v", info.ID, retryErr)
+		return nil, err
+	}
+
+	notification, decryptErr := whatsmeow.DecryptMediaRetryNotification(retryEvt, mediaKey)
+	if decryptErr != nil {
+		gows.Log.Errorf("Failed to decrypt media retry notification for '%s': %v", info.ID, decryptErr)
+		gows.mediaRetryEvents.Delete(info.ID)
+		return nil, err
+	}
+	if notification.GetResult() != waMmsRetry.MediaRetryNotification_SUCCESS {
+		gows.Log.Warnf("Media retry for '%s' was not successful: result=%v", info.ID, notification.GetResult())
+		gows.mediaRetryEvents.Delete(info.ID)
+		return nil, err
+	}
+
+	gows.Log.Infof("Got new DirectPath for '%s', retrying download", info.ID)
+	updateDirectPath(msg, notification.GetDirectPath())
+	return gows.DownloadAnyMedia(ctx, msg)
+}
+
+// requestAndWaitForMediaRetry sends a media-retry receipt to the phone (at most once
+// per message while a receipt is already in-flight) and waits up to 60 s for the
+// *events.MediaRetry response. If a cached event from a previous in-flight attempt
+// already exists it is returned immediately without sending another receipt.
+func (gows *GoWS) requestAndWaitForMediaRetry(
+	ctx context.Context,
+	info *types.MessageInfo,
+	mediaKey []byte,
+) (*events.MediaRetry, error) {
+	// Fast path: a previous call already received the event and the TTL cache still holds it.
+	if item := gows.mediaRetryEvents.Get(info.ID); item != nil {
+		gows.Log.Debugf("Using cached MediaRetry event for '%s'", info.ID)
+		return item.Value(), nil
+	}
+
+	// Try to register as the sole active waiter.
+	// If another goroutine is already waiting, poll the cache instead of
+	// sending a duplicate receipt.
+	ch := make(chan *events.MediaRetry, 1)
+	_, alreadyWaiting := gows.mediaRetryWaiters.LoadOrStore(info.ID, ch)
+
+	if alreadyWaiting {
+		gows.Log.Debugf("MediaRetry receipt for '%s' already in-flight, polling for cached event", info.ID)
+		retryCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if item := gows.mediaRetryEvents.Get(info.ID); item != nil {
+					return item.Value(), nil
+				}
+			case <-retryCtx.Done():
+				return nil, fmt.Errorf("timed out waiting for media retry response for '%s'", info.ID)
+			}
+		}
+	}
+
+	defer gows.mediaRetryWaiters.Delete(info.ID)
+
+	if err := gows.SendMediaRetryReceipt(ctx, info, mediaKey); err != nil {
+		return nil, fmt.Errorf("failed to send media retry receipt: %w", err)
+	}
+
+	retryCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	select {
+	case evt := <-ch:
+		return evt, nil
+	case <-retryCtx.Done():
+		return nil, fmt.Errorf("timed out waiting for media retry response for '%s'", info.ID)
+	}
+}
+
+// extractMediaKey returns the MediaKey from the downloadable media inside msg.
+func extractMediaKey(msg *waE2E.Message) []byte {
+	target := unwrapMediaMessage(msg)
+	if target == nil {
+		return nil
+	}
+	switch {
+	case target.ImageMessage != nil:
+		return target.ImageMessage.MediaKey
+	case target.VideoMessage != nil:
+		return target.VideoMessage.MediaKey
+	case target.PtvMessage != nil:
+		return target.PtvMessage.MediaKey
+	case target.AudioMessage != nil:
+		return target.AudioMessage.MediaKey
+	case target.DocumentMessage != nil:
+		return target.DocumentMessage.MediaKey
+	case target.DocumentWithCaptionMessage != nil:
+		return target.DocumentWithCaptionMessage.GetMessage().GetDocumentMessage().MediaKey
+	case target.StickerMessage != nil:
+		return target.StickerMessage.MediaKey
+	}
+	return nil
+}
+
+// updateDirectPath sets a fresh DirectPath on the downloadable media inside msg.
+func updateDirectPath(msg *waE2E.Message, path string) {
+	target := unwrapMediaMessage(msg)
+	if target == nil {
+		return
+	}
+	switch {
+	case target.ImageMessage != nil:
+		target.ImageMessage.DirectPath = &path
+	case target.VideoMessage != nil:
+		target.VideoMessage.DirectPath = &path
+	case target.PtvMessage != nil:
+		target.PtvMessage.DirectPath = &path
+	case target.AudioMessage != nil:
+		target.AudioMessage.DirectPath = &path
+	case target.DocumentMessage != nil:
+		target.DocumentMessage.DirectPath = &path
+	case target.DocumentWithCaptionMessage != nil:
+		if dm := target.DocumentWithCaptionMessage.GetMessage().GetDocumentMessage(); dm != nil {
+			dm.DirectPath = &path
+		}
+	case target.StickerMessage != nil:
+		target.StickerMessage.DirectPath = &path
 	}
 }
 

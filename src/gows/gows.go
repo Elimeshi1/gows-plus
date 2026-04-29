@@ -3,10 +3,12 @@ package gows
 import (
 	"context"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"github.com/devlikeapro/gows/storage"
 	"github.com/devlikeapro/gows/storage/sqlstorage"
+	"github.com/jellydator/ttlcache/v3"
 	_ "github.com/jackc/pgx/v5"     // Import the Postgres driver
 	_ "github.com/mattn/go-sqlite3" // Import the SQLite driver
 	"go.mau.fi/whatsmeow"
@@ -28,6 +30,12 @@ type GoWS struct {
 	container           *sqlstorage.GContainer
 	storageEventHandler *StorageEventHandler
 	eventHandlerID      uint32
+	// mediaRetryWaiters holds the active channel for an in-flight SendMediaRetryReceipt.
+	mediaRetryWaiters sync.Map // types.MessageID → chan *events.MediaRetry
+	// mediaRetryEvents caches every incoming *events.MediaRetry for 24 h with automatic eviction.
+	// This lets subsequent download attempts reuse the fresh DirectPath without
+	// sending another receipt, even if the first waiter already timed out.
+	mediaRetryEvents *ttlcache.Cache[types.MessageID, *events.MediaRetry]
 }
 
 func (gows *GoWS) reissueEvent(event interface{}) {
@@ -56,6 +64,20 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 		} else if event.(*events.Message).Message.GetPollUpdateMessage() != nil {
 			go gows.handleEncPollVote(gows.Context, event.(*events.Message))
 		}
+
+	case *events.MediaRetry:
+		evt := event.(*events.MediaRetry)
+		// Always cache so that callers whose 60 s wait already expired can still
+		// pick up the result on their next NestJS-level retry.
+		gows.mediaRetryEvents.Set(evt.MessageID, evt, ttlcache.DefaultTTL)
+		// Notify any goroutine that is still actively waiting.
+		if ch, loaded := gows.mediaRetryWaiters.Load(evt.MessageID); loaded {
+			select {
+			case ch.(chan *events.MediaRetry) <- evt:
+			default:
+			}
+		}
+		data = event
 
 	default:
 		data = event
@@ -114,6 +136,9 @@ func (gows *GoWS) Stop() {
 	}
 
 	gows.Disconnect()
+	if gows.mediaRetryEvents != nil {
+		gows.mediaRetryEvents.Stop()
+	}
 	if gows.container != nil {
 		err := gows.container.Close()
 		if err != nil {
@@ -163,6 +188,11 @@ func BuildSession(
 	client.EmitAppStateEventsOnFullSync = true
 	client.InitialAutoReconnect = true
 
+	retryEventsCache := ttlcache.New[types.MessageID, *events.MediaRetry](
+		ttlcache.WithTTL[types.MessageID, *events.MediaRetry](24 * time.Hour),
+	)
+	go retryEventsCache.Start()
+
 	ctx, cancel := context.WithCancel(ctx)
 	gows := &GoWS{
 		client,
@@ -174,6 +204,8 @@ func BuildSession(
 		container,
 		nil,
 		0,
+		sync.Map{},
+		retryEventsCache,
 	}
 	if storageCfg == (StorageConfig{}) {
 		storageCfg = DefaultStorageConfig()
