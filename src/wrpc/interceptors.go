@@ -2,7 +2,6 @@ package wrpc
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"google.golang.org/grpc"
@@ -22,7 +21,7 @@ func UnaryTimeoutInterceptor(timeout time.Duration) grpc.UnaryServerInterceptor 
 		defer cancel()
 
 		resp, err := handler(ctx, req)
-		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded {
+		if ctx.Err() == context.DeadlineExceeded {
 			return nil, status.Error(codes.DeadlineExceeded, "request deadline exceeded")
 		}
 		return resp, err
