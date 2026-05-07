@@ -25,6 +25,7 @@ require (
 require (
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/gogo/protobuf v1.3.2
+	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/samber/lo v1.49.1
 	go.mau.fi/util v0.9.8
 )
@@ -40,7 +41,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jellydator/ttlcache/v3 v3.4.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
@@ -64,4 +64,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260429025120-69eefef85b9c
+replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260507045647-8c86cdb1fd08

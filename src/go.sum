@@ -28,8 +28,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/devlikeapro/goscraper v0.0.0-20260224081950-3e513f796e42 h1:Tn2PllrFPMnXIh2Jyyp7QZX1TYz1XeoJmrrdmgJoEWA=
 github.com/devlikeapro/goscraper v0.0.0-20260224081950-3e513f796e42/go.mod h1:Ezk+40Xo1pBhyjQxDWnPpujW7munML5zGsdecYMi43o=
-github.com/devlikeapro/whatsmeow v0.0.0-20260429025120-69eefef85b9c h1:1RAfsEqslZu736en8DrbXyq92pAdMrPth63gVY/oDjI=
-github.com/devlikeapro/whatsmeow v0.0.0-20260429025120-69eefef85b9c/go.mod h1:ijfkzOXauA/Vz/htXEMfOAJSUgglribW5oQeYC9tSSg=
+github.com/devlikeapro/whatsmeow v0.0.0-20260507045647-8c86cdb1fd08 h1:kYWcSG+fHOLYDReR03wIMci2ogcWTbV0LqvY/x9PFqk=
+github.com/devlikeapro/whatsmeow v0.0.0-20260507045647-8c86cdb1fd08/go.mod h1:ijfkzOXauA/Vz/htXEMfOAJSUgglribW5oQeYC9tSSg=
 github.com/dhui/dktest v0.4.5 h1:uUfYBIVREmj/Rw6MvgmqNAYzTiKOHJak+enB5Di73MM=
 github.com/dhui/dktest v0.4.5/go.mod h1:tmcyeHDKagvlDrz7gDKq4UAJOLIfVZYkfD5OnHDwcCo=
 github.com/disintegration/imaging v1.6.2/go.mod h1:44/5580QXChDfwIclfc/PCwrr44amcmDAg8hxG0Ewe4=
@@ -180,6 +180,8 @@ go.opentelemetry.io/otel/trace v1.38.0 h1:Fxk5bKrDZJUH+AMyyIXGcFAPah0oRcT+LuNtJr
 go.opentelemetry.io/otel/trace v1.38.0/go.mod h1:j1P9ivuFsTceSWe1oY+EeW3sc+Pp42sO++GHkg4wwhs=
 go.uber.org/atomic v1.11.0 h1:ZvwS0R+56ePWxUNi+Atn9dWONBPp/AUETXlHW0DxSjE=
 go.uber.org/atomic v1.11.0/go.mod h1:LUxbIzbOniOlMKjJjyPfpl4v+PKK2cNJn91OQbhoJI0=
+go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
+go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 gocv.io/x/gocv v0.25.0/go.mod h1:Rar2PS6DV+T4FL+PM535EImD/h13hGVaHhnCu1xarBs=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
