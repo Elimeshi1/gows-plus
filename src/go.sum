@@ -4,6 +4,10 @@ github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 h1:L/gRVlceqvL25
 github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161/go.mod h1:xomTg63KZ2rFqZQzSB4Vz2SUXa1BpHTVz9L5PTmPC4E=
 github.com/DATA-DOG/go-sqlmock v1.5.2 h1:OcvFkGmslmlZibjAjaHm3L//6LiuBgolP7OputlJIzU=
 github.com/DATA-DOG/go-sqlmock v1.5.2/go.mod h1:88MAG/4G7SMwSE3CeA0ZKzrT5CiOU3OJ+JlNzwDqpNU=
+github.com/Elimeshi1/goscraper v0.0.0-20260224081950-3e513f796e42 h1:Q+mjvVQosuch6T/uNgfAwwN6wNvidfInkix+bjP8Kck=
+github.com/Elimeshi1/goscraper v0.0.0-20260224081950-3e513f796e42/go.mod h1:Ezk+40Xo1pBhyjQxDWnPpujW7munML5zGsdecYMi43o=
+github.com/Elimeshi1/whatsmeow v0.0.0-20260507045647-8c86cdb1fd08 h1:94lUubu8HRFOhZf7wtATJcUeVl/s2dUSMcTStaRdNWQ=
+github.com/Elimeshi1/whatsmeow v0.0.0-20260507045647-8c86cdb1fd08/go.mod h1:ijfkzOXauA/Vz/htXEMfOAJSUgglribW5oQeYC9tSSg=
 github.com/Masterminds/squirrel v1.5.4 h1:uUcX/aBc8O7Fg9kaISIUsHXdKuqehiXAMQTYX8afzqM=
 github.com/Masterminds/squirrel v1.5.4/go.mod h1:NNaOrjSoIDfDA40n7sr2tPNZRfjzjA400rg+riTZj10=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
@@ -26,10 +30,6 @@ github.com/coder/websocket v1.8.14/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6p
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/devlikeapro/goscraper v0.0.0-20260224081950-3e513f796e42 h1:Tn2PllrFPMnXIh2Jyyp7QZX1TYz1XeoJmrrdmgJoEWA=
-github.com/devlikeapro/goscraper v0.0.0-20260224081950-3e513f796e42/go.mod h1:Ezk+40Xo1pBhyjQxDWnPpujW7munML5zGsdecYMi43o=
-github.com/devlikeapro/whatsmeow v0.0.0-20260507045647-8c86cdb1fd08 h1:kYWcSG+fHOLYDReR03wIMci2ogcWTbV0LqvY/x9PFqk=
-github.com/devlikeapro/whatsmeow v0.0.0-20260507045647-8c86cdb1fd08/go.mod h1:ijfkzOXauA/Vz/htXEMfOAJSUgglribW5oQeYC9tSSg=
 github.com/dhui/dktest v0.4.5 h1:uUfYBIVREmj/Rw6MvgmqNAYzTiKOHJak+enB5Di73MM=
 github.com/dhui/dktest v0.4.5/go.mod h1:tmcyeHDKagvlDrz7gDKq4UAJOLIfVZYkfD5OnHDwcCo=
 github.com/disintegration/imaging v1.6.2/go.mod h1:44/5580QXChDfwIclfc/PCwrr44amcmDAg8hxG0Ewe4=
