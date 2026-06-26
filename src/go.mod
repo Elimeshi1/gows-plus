@@ -64,7 +64,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// [WAHA] point dependency forks at our own mirrors (Elimeshi1) for build independence.
+// [WAHA] point whatsmeow at our own fork for build independence.
+// goscraper is left on devlikeapro (rarely changes; not worth a fork).
 replace go.mau.fi/whatsmeow => github.com/Elimeshi1/whatsmeow v0.0.0-20260507045647-8c86cdb1fd08
-
-replace github.com/devlikeapro/goscraper => github.com/Elimeshi1/goscraper v0.0.0-20260224081950-3e513f796e42
