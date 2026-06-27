@@ -6,7 +6,7 @@ on:
       - '*'
 
 env:
-  TARGET_REPO: devlikeapro/gows
+  TARGET_REPO: devlikeapro/gows-plus
   PROTO_SRC_DIR: proto
 
 jobs:
@@ -81,11 +81,11 @@ jobs:
           gh auth login --with-token <<< "$CLI_GH_TOKEN"
           gh config set prompt disabled
 
-      - name: Create new release
-        run: |
-          gh release create "$RELEASE_TAG" \
-            --repo "$TARGET_REPO" \
-            --title "$RELEASE_TAG"
+#      - name: Create new release
+#        run: |
+#          gh release create "$RELEASE_TAG" \
+#            --repo "$TARGET_REPO" \
+#            --title "$RELEASE_TAG"
 
       - name: Upload release assets
         run: |

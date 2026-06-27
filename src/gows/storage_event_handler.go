@@ -51,6 +51,20 @@ func (st *StorageEventHandler) shouldIgnoreJID(jid types.JID) bool {
 	}
 }
 
+// isStatusBroadcast reports whether the JID is the status@broadcast JID.
+func isStatusBroadcast(jid types.JID) bool {
+	return jid.Server == types.StatusBroadcastJID.Server &&
+		jid.User == types.StatusBroadcastJID.User
+}
+
+// keepOwnStatus reports whether an event must be kept even when its JID would
+// otherwise be ignored: our own (fromMe) status@broadcast messages. This lets
+// statuses we sent be stored and read back from the DB later even when statuses
+// are configured to be ignored. Statuses from others stay filtered.
+func keepOwnStatus(jid types.JID, isFromMe bool) bool {
+	return isFromMe && isStatusBroadcast(jid)
+}
+
 func (st *StorageEventHandler) GetMessageForRetry(requester, to types.JID, id types.MessageID) *waE2E.Message {
 	msg, err := st.storage.Messages.GetMessage(id)
 	if err != nil {
@@ -125,7 +139,8 @@ func (st *StorageEventHandler) handleEvent(event interface{}) {
 	switch event.(type) {
 	case *events.Message:
 		msg := event.(*events.Message)
-		if st.shouldIgnoreJID(msg.Info.Chat) {
+		if st.shouldIgnoreJID(msg.Info.Chat) &&
+			!keepOwnStatus(msg.Info.Chat, msg.Info.IsFromMe) {
 			return
 		}
 		var status storage.Status
@@ -138,7 +153,10 @@ func (st *StorageEventHandler) handleEvent(event interface{}) {
 		st.handleMessageEvent(msg)
 	case *events.Receipt:
 		receipt := event.(*events.Receipt)
-		if st.shouldIgnoreJID(receipt.Chat) {
+		// status@broadcast receipts are always for our own statuses; keep them so
+		// the stored status keeps its delivery/read status updated even when
+		// statuses are otherwise ignored.
+		if st.shouldIgnoreJID(receipt.Chat) && !isStatusBroadcast(receipt.Chat) {
 			return
 		}
 		st.handleReceipt(receipt)

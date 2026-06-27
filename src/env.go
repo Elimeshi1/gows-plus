@@ -18,6 +18,24 @@ func getClientConfig() ClientConfig {
 	return cfg
 }
 
+// StatusConfig holds environment-variable overrides for status broadcast sending.
+type StatusConfig struct {
+	// ParticipantsBatchSize controls how many contacts are included per batch
+	// when sending a status/story to status@broadcast.
+	// [WAHA] Kept large (5000): small batches caused MORE 429 rate-limiting, not
+	// fewer timeouts (#2080 / #2096). Large-list reliability is handled instead by
+	// the per-batch ack timeout, inter-batch delay and retry/backoff in status.go.
+	ParticipantsBatchSize int `env:"WAHA_GOWS_STATUS_PARTICIPANTS_BATCH_SIZE" envDefault:"5000"`
+}
+
+func getStatusConfig() StatusConfig {
+	cfg := StatusConfig{}
+	if err := env.Parse(&cfg); err != nil {
+		panic(err)
+	}
+	return cfg
+}
+
 // DevicePropsConfig holds optional overrides for waCompanionReg.DeviceProps.
 // Each Maybe field has three states:
 //

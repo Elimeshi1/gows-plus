@@ -83,10 +83,11 @@ func (gows *GoWS) SendStatusMessage(ctx context.Context, to types.JID, msg *waE2
 		return p.Server == types.DefaultUserServer
 	})
 
-	// [WAHA] Always batch by the configured size (default 5000), regardless of
+	// [WAHA] Always batch by the configured size (statusParticipantsBatchSize,
+	// from WAHA_GOWS_STATUS_PARTICIPANTS_BATCH_SIZE, default 5000), regardless of
 	// whether the caller supplied the participant list. Previously an explicit
 	// list was sent as a single batch, which timed out for large audiences.
-	participantsBatchSize := statusEnvInt("WAHA_GOWS_STATUS_PARTICIPANTS_BATCH_SIZE", defaultStatusParticipantsBatchSize)
+	participantsBatchSize := statusParticipantsBatchSize
 	if participantsBatchSize <= 0 {
 		participantsBatchSize = defaultStatusParticipantsBatchSize
 	}
