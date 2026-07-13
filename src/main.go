@@ -133,6 +133,7 @@ func main() {
 		clientCfg.BrowserName,
 		gows.GetDeviceProps().GetPlatformType(),
 	)
+	PatchDeviceProps(gows.GetDeviceProps())
 
 	statusCfg := getStatusConfig()
 	log.Infof("Status broadcast participants batch size: %d", statusCfg.ParticipantsBatchSize)
