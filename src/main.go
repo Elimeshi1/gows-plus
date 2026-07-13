@@ -126,8 +126,13 @@ func main() {
 	}
 
 	clientCfg := getClientConfig()
-	log.Infof("Using device name: '%s', browser name: '%s'", clientCfg.DeviceName, clientCfg.BrowserName)
 	gows.SetDeviceAndBrowser(clientCfg.DeviceName, clientCfg.BrowserName)
+	log.Infof(
+		"Using device name: '%s', browser name: '%s', platform type: '%s'",
+		clientCfg.DeviceName,
+		clientCfg.BrowserName,
+		gows.GetDeviceProps().GetPlatformType(),
+	)
 
 	statusCfg := getStatusConfig()
 	log.Infof("Status broadcast participants batch size: %d", statusCfg.ParticipantsBatchSize)

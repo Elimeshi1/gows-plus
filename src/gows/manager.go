@@ -89,24 +89,17 @@ func GetDeviceProps() *waCompanionReg.DeviceProps {
 	return store.DeviceProps
 }
 
+// browserPlatformType resolves a name to a DeviceProps_PlatformType.
+// Any PlatformType enum name is accepted (case-insensitive), not just browsers:
+// "Desktop" renders the device name alone in WhatsApp -> Linked devices,
+// while a browser name renders as "Browser (DeviceName)".
 func browserPlatformType(name string) *waCompanionReg.DeviceProps_PlatformType {
-	name = strings.TrimSpace(name)
-	switch strings.ToLower(name) {
-	case "chrome":
-		return waCompanionReg.DeviceProps_CHROME.Enum()
-	case "firefox":
-		return waCompanionReg.DeviceProps_FIREFOX.Enum()
-	case "ie":
-		return waCompanionReg.DeviceProps_IE.Enum()
-	case "opera":
-		return waCompanionReg.DeviceProps_OPERA.Enum()
-	case "safari":
-		return waCompanionReg.DeviceProps_SAFARI.Enum()
-	case "edge":
-		return waCompanionReg.DeviceProps_EDGE.Enum()
-	default:
+	key := strings.ToUpper(strings.TrimSpace(name))
+	value, ok := waCompanionReg.DeviceProps_PlatformType_value[key]
+	if !ok {
 		return waCompanionReg.DeviceProps_UNKNOWN.Enum()
 	}
+	return waCompanionReg.DeviceProps_PlatformType(value).Enum()
 }
 
 func NewSessionManager() *SessionManager {

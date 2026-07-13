@@ -5,8 +5,10 @@
 Variables that control how the GOWS client identifies itself to WhatsApp.
 
 ```bash
-# Browser name reported to WhatsApp
-# Values: Chrome, Firefox, IE, Opera, Safari, Edge
+# Platform type reported to WhatsApp - drives the primary label in Linked devices
+# Browsers: Chrome, Firefox, IE, Opera, Safari, Edge
+# Also accepts any other whatsmeow PlatformType, most usefully: Desktop
+# Unknown values fall back to UNKNOWN ("Other device")
 # Default: Firefox
 WAHA_CLIENT_BROWSER_NAME=Firefox
 
@@ -14,6 +16,21 @@ WAHA_CLIENT_BROWSER_NAME=Firefox
 # Default: Ubuntu
 WAHA_CLIENT_DEVICE_NAME=Ubuntu
 ```
+
+How the two combine in **WhatsApp -> Linked devices**:
+
+| `WAHA_CLIENT_BROWSER_NAME` | `WAHA_CLIENT_DEVICE_NAME` | Shown as             |
+|----------------------------|---------------------------|----------------------|
+| `Chrome`                   | `MyApp`                   | Google Chrome (MyApp)|
+| `Desktop`                  | `MyApp`                   | MyApp                |
+| `NotABrowser`              | `MyApp`                   | Other device         |
+
+Use `Desktop` to show your own brand name as the sole label - WhatsApp renders it the same way it
+renders an official desktop client entry. With an unrecognized value WhatsApp drops the device name
+entirely and shows a generic "Other device".
+
+Device props are only sent when a device registers, so change these, restart the **container**, and
+then **repair** (logout/scan QR) a session for it to take effect.
 
 ## GOWS Device Props
 
