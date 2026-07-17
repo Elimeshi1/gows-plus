@@ -1,6 +1,8 @@
 package gows
 
 import (
+	"time"
+
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -8,11 +10,11 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
-	"time"
 )
 
 var (
-	FetchPreviewTimeout = 6 * time.Second
+	// Overridable via WAHA_GOWS_LINK_PREVIEW_TIMEOUT (set at startup in main).
+	FetchPreviewTimeout = 10 * time.Second
 )
 
 func (gows *GoWS) BuildConversationMessage(text string) *waE2E.Message {

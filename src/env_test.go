@@ -2,9 +2,25 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
+
+func TestLinkPreviewTimeout_Default(t *testing.T) {
+	cfg := getLinkPreviewConfig()
+	if cfg.FetchTimeout != 10*time.Second {
+		t.Fatalf("expected default 10s, got %s", cfg.FetchTimeout)
+	}
+}
+
+func TestLinkPreviewTimeout_Custom(t *testing.T) {
+	t.Setenv("WAHA_GOWS_LINK_PREVIEW_TIMEOUT", "30s")
+	cfg := getLinkPreviewConfig()
+	if cfg.FetchTimeout != 30*time.Second {
+		t.Fatalf("expected 30s, got %s", cfg.FetchTimeout)
+	}
+}
 
 func parseDevicePropsConfig(t *testing.T) DevicePropsConfig {
 	t.Helper()

@@ -139,6 +139,10 @@ func main() {
 	log.Infof("Status broadcast participants batch size: %d", statusCfg.ParticipantsBatchSize)
 	gows.SetStatusParticipantsBatchSize(statusCfg.ParticipantsBatchSize)
 
+	linkPreviewCfg := getLinkPreviewConfig()
+	log.Infof("Link preview fetch timeout: %s", linkPreviewCfg.FetchTimeout)
+	gows.FetchPreviewTimeout = linkPreviewCfg.FetchTimeout
+
 	// Build the server
 	grpcServer := buildGrpcServer(log)
 	// Open unix socket
