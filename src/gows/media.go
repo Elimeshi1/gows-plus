@@ -414,12 +414,16 @@ func (gows *GoWS) AddLinkPreviewWithContext(
 		message.JPEGThumbnail = thumbnail
 		message.ThumbnailDirectPath = &resp.DirectPath
 		message.ThumbnailSHA256 = resp.FileSHA256
-		message.ThumbnailEncSHA256 = resp.FileEncSHA256
 		message.ThumbnailHeight = proto.Uint32(size.Height)
 		message.ThumbnailWidth = proto.Uint32(size.Width)
-		message.MediaKey = resp.MediaKey
-		now := time.Now().Unix()
-		message.MediaKeyTimestamp = &now
+		if !IsNewsletter(jid) {
+			// Newsletter thumbnails are uploaded unencrypted (UploadNewsletter),
+			// so encryption fields must be absent on the plaintext message
+			message.ThumbnailEncSHA256 = resp.FileEncSHA256
+			message.MediaKey = resp.MediaKey
+			now := time.Now().Unix()
+			message.MediaKeyTimestamp = &now
+		}
 	}
 	return nil
 }

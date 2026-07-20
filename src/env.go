@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/caarlos0/env/v11"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 )
@@ -30,6 +32,22 @@ type StatusConfig struct {
 
 func getStatusConfig() StatusConfig {
 	cfg := StatusConfig{}
+	if err := env.Parse(&cfg); err != nil {
+		panic(err)
+	}
+	return cfg
+}
+
+// LinkPreviewConfig holds environment-variable overrides for link preview generation.
+type LinkPreviewConfig struct {
+	// FetchTimeout bounds fetching the page metadata and the preview image
+	// when generating a link preview for an outgoing message.
+	// Go duration format: 10s, 30s, 1m.
+	FetchTimeout time.Duration `env:"WAHA_GOWS_LINK_PREVIEW_TIMEOUT" envDefault:"10s"`
+}
+
+func getLinkPreviewConfig() LinkPreviewConfig {
+	cfg := LinkPreviewConfig{}
 	if err := env.Parse(&cfg); err != nil {
 		panic(err)
 	}

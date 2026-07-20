@@ -64,6 +64,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// [WAHA] whatsmeow is unpatched; track devlikeapro's v1.0.42 pin directly.
+// [WAHA] whatsmeow is unpatched; track devlikeapro's pin directly.
 // goscraper is left on devlikeapro too (rarely changes; not worth a fork).
-replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260627093951-2c5be6382f6d
+replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260717112805-ea0610a44e55
