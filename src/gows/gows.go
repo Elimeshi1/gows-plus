@@ -304,7 +304,15 @@ func (gows *GoWS) SendMessage(ctx context.Context, to types.JID, msg *waE2E.Mess
 
 	if to.User == "status" && to.Server == types.BroadcastServer {
 		// Broadcast messages (Status)
-		result, err := gows.SendStatusMessage(ctx, to, msg, extra)
+		//
+		// [WAHA] A status@broadcast to a large audience can outlast the caller's
+		// gRPC deadline. Detach from the request context so a client-side timeout
+		// does not abort a send that is already live on WhatsApp — aborting it
+		// mid-batch is what previously left later batches undelivered and made the
+		// caller believe the status "reached nobody". The send runs to completion
+		// and reports exactly who it reached (see SendStatusMessage).
+		sendCtx := context.WithoutCancel(ctx)
+		result, err := gows.SendStatusMessage(sendCtx, to, msg, extra)
 		if err != nil {
 			return nil, err
 		}

@@ -103,6 +103,11 @@ func (gows *GoWS) SendStatusMessage(ctx context.Context, to types.JID, msg *waE2
 
 	errs := make([]error, 0)
 	succeeded := 0
+	// [WAHA] Track delivery at batch granularity (not per phone number) so a large
+	// broadcast is never reported as an opaque success/failure ("reached nobody"),
+	// without dumping tens of thousands of recipients into the log.
+	deliveredBatches := make([]int, 0, len(batches))
+	failedBatches := make([]int, 0)
 	failedParticipants := make([]types.JID, 0)
 	ignored := len(allParticipants) - len(validParticipants)
 	gows.Log.Infof(
@@ -137,12 +142,23 @@ func (gows *GoWS) SendStatusMessage(ctx context.Context, to types.JID, msg *waE2
 		if batchErr != nil {
 			gows.Log.Errorf("Failed to send message (%s) to (batch %d/%d): %v", extra.ID, index+1, len(batches), batchErr)
 			errs = append(errs, fmt.Errorf("batch %d: %w", index+1, batchErr))
+			failedBatches = append(failedBatches, index+1)
 			failedParticipants = append(failedParticipants, participants...)
 		} else {
 			succeeded++
+			deliveredBatches = append(deliveredBatches, index+1)
 			gows.Log.Infof("Sending status message (%s) to %d participants (batch %d/%d) - success", extra.ID, len(participants), index+1, len(batches))
 		}
 	}
+
+	// [WAHA] Explicit, batch-level delivery report so the caller and the logs know
+	// exactly which batches went out and which didn't — without dumping tens of
+	// thousands of phone numbers. Logged before the total-failure return below so
+	// a fully-failed send still records what it attempted.
+	gows.Log.Infof(
+		"Status (%s) delivery report: %d/%d batches delivered (ok=%v, failed=%v), %d participants not delivered, %d ignored",
+		extra.ID, len(deliveredBatches), len(batches), deliveredBatches, failedBatches, len(failedParticipants), ignored,
+	)
 
 	// [WAHA] Best-effort delivery: only fail the whole call if nothing got through.
 	// A status that reached at least one batch is already live on WhatsApp, so
