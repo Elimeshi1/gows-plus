@@ -9,6 +9,14 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+// lenientProtoJSON reads stored message protos tolerantly. The DB outlives any
+// single build: rows written while the whatsmeow pin carried newer WhatsApp
+// protos (e.g. "faviconMMSMetadata") must stay readable after the pin moves to
+// a snapshot that lacks those fields, otherwise every API that loads such a row
+// (chats overview, message listing) fails with "unknown field". Unknown fields
+// are dropped on read. [WAHA]
+var lenientProtoJSON = protojson.UnmarshalOptions{DiscardUnknown: true}
+
 func isNullJson(data []byte) bool {
 	if len(data) != 4 {
 		return false
@@ -145,7 +153,7 @@ func (f *MessageMapper) Unmarshal(data []byte, msg *storage.StoredMessage) error
 		if msg.Message.Message == nil {
 			msg.Message.Message = &waProto.Message{}
 		}
-		if err := protojson.Unmarshal(temp.Message, msg.Message.Message); err != nil {
+		if err := lenientProtoJSON.Unmarshal(temp.Message, msg.Message.Message); err != nil {
 			return err
 		}
 	}
@@ -155,7 +163,7 @@ func (f *MessageMapper) Unmarshal(data []byte, msg *storage.StoredMessage) error
 		if msg.RawMessage == nil {
 			msg.RawMessage = &waProto.Message{}
 		}
-		if err := protojson.Unmarshal(temp.RawMessage, msg.RawMessage); err != nil {
+		if err := lenientProtoJSON.Unmarshal(temp.RawMessage, msg.RawMessage); err != nil {
 			return err
 		}
 	}
@@ -165,7 +173,7 @@ func (f *MessageMapper) Unmarshal(data []byte, msg *storage.StoredMessage) error
 		if msg.SourceWebMsg == nil {
 			msg.SourceWebMsg = &waProto.WebMessageInfo{}
 		}
-		if err := protojson.Unmarshal(temp.SourceWebMsg, msg.SourceWebMsg); err != nil {
+		if err := lenientProtoJSON.Unmarshal(temp.SourceWebMsg, msg.SourceWebMsg); err != nil {
 			return err
 		}
 	}
