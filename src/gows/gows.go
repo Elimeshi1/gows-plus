@@ -274,6 +274,17 @@ func BuildSession(
 		storage:    gows.Storage,
 		ignoreJids: ignoreJids,
 	}
+	// [WAHA] Enforce the Ignore config at the crypto layer too: skip decryption and
+	// all related store writes (LID mappings, push names, identity/session churn)
+	// for incoming messages in ignored chats — e.g. other people's statuses when
+	// Ignore.Status is set — instead of decrypting them and dropping the event
+	// later in the storage handler. Own (fromMe) messages are never skipped,
+	// mirroring keepOwnStatus.
+	if ignoreJids != nil {
+		client.PreDecryptIgnore = func(info *types.MessageInfo) bool {
+			return !info.IsFromMe && gows.storageEventHandler.shouldIgnoreJID(info.Chat)
+		}
+	}
 	gows.GetMessageForRetry = gows.storageEventHandler.GetMessageForRetry
 	gows.BackgroundEventCtx = gows.Context
 	return gows, nil

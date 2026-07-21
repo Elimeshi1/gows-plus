@@ -64,6 +64,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// [WAHA] whatsmeow is unpatched; track devlikeapro's pin directly.
-// goscraper is left on devlikeapro too (rarely changes; not worth a fork).
-replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260717112805-ea0610a44e55
+// [WAHA] whatsmeow now carries our patches (no-op PN->LID migration skip,
+// PreDecryptIgnore hook); track the Elimeshi1 fork, based on devlikeapro's
+// ea0610a44e55 pin. goscraper is left on devlikeapro (rarely changes).
+replace go.mau.fi/whatsmeow => github.com/Elimeshi1/whatsmeow v0.0.0-20260721064451-3bb6c08aafad
