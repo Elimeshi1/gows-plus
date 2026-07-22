@@ -244,6 +244,26 @@ func (s *Server) SetGroupAnnounce(ctx context.Context, req *__.JidBoolRequest) (
 	return &__.Empty{}, nil
 }
 
+func (s *Server) SetGroupMemberAddMode(ctx context.Context, req *__.JidBoolRequest) (*__.Empty, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	jid, err := types.ParseJID(req.GetJid())
+	if err != nil {
+		return nil, err
+	}
+	mode := types.GroupMemberAddModeAdmin
+	if req.GetValue() {
+		mode = types.GroupMemberAddModeAllMember
+	}
+	err = cli.SetGroupMemberAddMode(ctx, jid, mode)
+	if err != nil {
+		return nil, err
+	}
+	return &__.Empty{}, nil
+}
+
 func (s *Server) UpdateGroupParticipants(ctx context.Context, req *__.UpdateParticipantsRequest) (*__.JsonList, error) {
 	cli, err := s.Sm.Get(req.GetSession().GetId())
 	if err != nil {
