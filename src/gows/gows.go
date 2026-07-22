@@ -8,8 +8,8 @@ import (
 
 	"github.com/devlikeapro/gows/storage"
 	"github.com/devlikeapro/gows/storage/sqlstorage"
+	_ "github.com/jackc/pgx/v5" // Import the Postgres driver
 	"github.com/jellydator/ttlcache/v3"
-	_ "github.com/jackc/pgx/v5"     // Import the Postgres driver
 	_ "github.com/mattn/go-sqlite3" // Import the SQLite driver
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
@@ -57,6 +57,9 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 			LID:      &gows.Store.LID,
 			PushName: gows.Store.PushName,
 		}
+		// Actively fetch the current reachout timelock state, so the session
+		// learns it right after (re)start without waiting for a push notification.
+		go gows.fetchReachoutTimelock()
 
 	case *events.Message:
 		msg := event.(*events.Message)
@@ -94,7 +97,6 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 
 	gows.emitEvent(data)
 }
-
 
 func (gows *GoWS) handleEvent(event interface{}) {
 	go gows.reissueEvent(event)
@@ -157,6 +159,21 @@ func (gows *GoWS) ensureNCTSalt() {
 	if err := gows.FetchAppState(gows.Context, appstate.WAPatchRegularHigh, false, false); err != nil {
 		gows.Log.Errorf("Failed to force regular_high app-state sync: %v", err)
 	}
+}
+
+// fetchReachoutTimelock fetches the current account reachout timelock state and
+// re-emits it as *events.NotifyAccountReachoutTimelock, so the API side handles
+// the fetched state exactly like the push notification.
+func (gows *GoWS) fetchReachoutTimelock() {
+	ctx, cancel := context.WithTimeout(gows.Context, 30*time.Second)
+	defer cancel()
+
+	result, err := gows.FetchAccountReachoutTimelock(ctx)
+	if err != nil {
+		gows.Log.Errorf("Failed to fetch account reachout timelock: %v", err)
+		return
+	}
+	gows.emitEvent(result)
 }
 
 func (gows *GoWS) listenQRCodeEvents() {
