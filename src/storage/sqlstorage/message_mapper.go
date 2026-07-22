@@ -2,6 +2,7 @@ package sqlstorage
 
 import (
 	"encoding/json"
+
 	"github.com/devlikeapro/gows/storage"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
@@ -21,6 +22,11 @@ type MessageMapper struct {
 }
 
 var messageMapper = &MessageMapper{}
+
+// Stored JSON may contain fields renamed or removed by later WhatsApp proto updates,
+// so unknown fields must not fail the read.
+// e.g. faviconMMSMetadata -> faviconMmsMetadata
+var pjson = protojson.UnmarshalOptions{DiscardUnknown: true}
 
 var _ Mapper[storage.StoredMessage] = (*MessageMapper)(nil)
 
@@ -145,7 +151,7 @@ func (f *MessageMapper) Unmarshal(data []byte, msg *storage.StoredMessage) error
 		if msg.Message.Message == nil {
 			msg.Message.Message = &waProto.Message{}
 		}
-		if err := protojson.Unmarshal(temp.Message, msg.Message.Message); err != nil {
+		if err := pjson.Unmarshal(temp.Message, msg.Message.Message); err != nil {
 			return err
 		}
 	}
@@ -155,7 +161,7 @@ func (f *MessageMapper) Unmarshal(data []byte, msg *storage.StoredMessage) error
 		if msg.RawMessage == nil {
 			msg.RawMessage = &waProto.Message{}
 		}
-		if err := protojson.Unmarshal(temp.RawMessage, msg.RawMessage); err != nil {
+		if err := pjson.Unmarshal(temp.RawMessage, msg.RawMessage); err != nil {
 			return err
 		}
 	}
@@ -165,7 +171,7 @@ func (f *MessageMapper) Unmarshal(data []byte, msg *storage.StoredMessage) error
 		if msg.SourceWebMsg == nil {
 			msg.SourceWebMsg = &waProto.WebMessageInfo{}
 		}
-		if err := protojson.Unmarshal(temp.SourceWebMsg, msg.SourceWebMsg); err != nil {
+		if err := pjson.Unmarshal(temp.SourceWebMsg, msg.SourceWebMsg); err != nil {
 			return err
 		}
 	}
