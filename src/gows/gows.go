@@ -39,8 +39,8 @@ type GoWS struct {
 	// This lets subsequent download attempts reuse the fresh DirectPath without
 	// sending another receipt, even if the first waiter already timed out.
 	mediaRetryEvents *ttlcache.Cache[types.MessageID, *events.MediaRetry]
-	// cappingFetchMu/cappingFetchLast throttle the message capping re-fetches
-	// driven by sends and the periodic poller (connect/timelock/463 bypass it).
+	// cappingFetchMu/cappingFetchLast throttle the message capping re-fetches driven by sends
+	// and the periodic poller (connect/timelock/475/463 bypass it).
 	cappingFetchMu    sync.Mutex
 	cappingFetchLast  time.Time
 	cappingPollerOnce sync.Once
@@ -202,14 +202,16 @@ const (
 	// cappingMinFetchInterval throttles the send-driven and periodic fetches so
 	// a burst of sends does not query the server on every message.
 	cappingMinFetchInterval = 60 * time.Second
-	// cappingPollInterval is the periodic safety-net re-fetch while connected.
-	cappingPollInterval = 10 * time.Minute
+	// cappingPollInterval is the periodic safety-net re-fetch while connected. Matches WhatsApp
+	// Web's fetch TTL (wa_individual_new_chat_msg_capping_fetch_ttl_seconds, default 3600s) so we
+	// do not query more often than a real client would.
+	cappingPollInterval = time.Hour
 )
 
 // fetchMessageCapping fetches the current new-chat message capping state and
 // re-emits it as *MessageCapping, so the API side can track the account's
 // per-cycle quota. Called (bypassing the throttle) on connect, whenever the
-// reachout timelock changes, and when a send is rejected with error 463.
+// reachout timelock changes, and when a send is rejected with error 475 or 463.
 func (gows *GoWS) fetchMessageCapping() {
 	gows.cappingFetchMu.Lock()
 	gows.cappingFetchLast = time.Now()
@@ -410,10 +412,12 @@ func (gows *GoWS) SendMessage(ctx context.Context, to types.JID, msg *waE2E.Mess
 	} else {
 		resp, err = gows.Client.SendMessage(ctx, to, msg, extra)
 		if err != nil {
-			// Error 463 is NackCallerReachoutTimelocked: the account just hit
-			// its cold-outreach limit, so refresh the capping to reflect it.
+			// 475 is NewChatMessagesCapped - the direct "quota exhausted" nack WhatsApp Web reacts
+			// to (it marks the account CAPPED on the spot; we re-fetch to get the real numbers).
+			// 463 is NackCallerReachoutTimelocked - the timelock sibling of the capping, so the
+			// quota state likely changed together with it.
 			if errors.Is(err, whatsmeow.ErrServerReturnedError) &&
-				strings.HasSuffix(err.Error(), " 463") {
+				(strings.HasSuffix(err.Error(), " 475") || strings.HasSuffix(err.Error(), " 463")) {
 				go gows.fetchMessageCapping()
 			}
 			return nil, err
