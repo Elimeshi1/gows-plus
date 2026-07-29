@@ -52,6 +52,23 @@ func getLinkPreviewConfig() LinkPreviewConfig {
 	return cfg
 }
 
+// KeepAliveConfig overrides whatsmeow's websocket keepalive ping interval.
+// Useful behind proxies that reap idle tunnels faster than the default ping,
+// which otherwise causes constant "Keepalive timed out" reconnect loops.
+type KeepAliveConfig struct {
+	// Go durations (8s, 1m); zero (or unset) leaves whatsmeow's default (min 20s / max 30s) in place
+	IntervalMin time.Duration `env:"WAHA_GOWS_KEEPALIVE_INTERVAL_MIN"`
+	IntervalMax time.Duration `env:"WAHA_GOWS_KEEPALIVE_INTERVAL_MAX"`
+}
+
+func getKeepAliveConfig() KeepAliveConfig {
+	cfg := KeepAliveConfig{}
+	if err := env.Parse(&cfg); err != nil {
+		panic(err)
+	}
+	return cfg
+}
+
 // DevicePropsConfig holds optional overrides for waCompanionReg.DeviceProps.
 // Each Maybe field has three states:
 //

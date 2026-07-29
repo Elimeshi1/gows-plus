@@ -2,7 +2,9 @@ package gows
 
 import (
 	"testing"
+	"time"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 )
 
@@ -37,6 +39,39 @@ func TestBrowserPlatformType(t *testing.T) {
 			actual := browserPlatformType(tt.input)
 			if actual.String() != tt.expected.String() {
 				t.Errorf("browserPlatformType(%q) = %s, expected %s", tt.input, actual, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSetKeepAliveInterval(t *testing.T) {
+	restoreMin, restoreMax := whatsmeow.KeepAliveIntervalMin, whatsmeow.KeepAliveIntervalMax
+	t.Cleanup(func() {
+		whatsmeow.KeepAliveIntervalMin, whatsmeow.KeepAliveIntervalMax = restoreMin, restoreMax
+	})
+
+	tests := []struct {
+		name        string
+		min         time.Duration
+		max         time.Duration
+		expectedMin time.Duration
+		expectedMax time.Duration
+	}{
+		{name: "both set", min: 8 * time.Second, max: 12 * time.Second, expectedMin: 8 * time.Second, expectedMax: 12 * time.Second},
+		{name: "only min above default max - max adjusted", min: 40 * time.Second, max: 0, expectedMin: 40 * time.Second, expectedMax: 50 * time.Second},
+		{name: "max equal to min - max adjusted", min: 10 * time.Second, max: 10 * time.Second, expectedMin: 10 * time.Second, expectedMax: 20 * time.Second},
+		{name: "max below min - max adjusted", min: 30 * time.Second, max: 10 * time.Second, expectedMin: 30 * time.Second, expectedMax: 40 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			whatsmeow.KeepAliveIntervalMin, whatsmeow.KeepAliveIntervalMax = restoreMin, restoreMax
+			min, max := SetKeepAliveInterval(tt.min, tt.max)
+			if min != tt.expectedMin || max != tt.expectedMax {
+				t.Errorf("SetKeepAliveInterval(%s, %s) = %s/%s, expected %s/%s", tt.min, tt.max, min, max, tt.expectedMin, tt.expectedMax)
+			}
+			if whatsmeow.KeepAliveIntervalMin != tt.expectedMin || whatsmeow.KeepAliveIntervalMax != tt.expectedMax {
+				t.Errorf("whatsmeow globals = %s/%s, expected %s/%s", whatsmeow.KeepAliveIntervalMin, whatsmeow.KeepAliveIntervalMax, tt.expectedMin, tt.expectedMax)
 			}
 		})
 	}
