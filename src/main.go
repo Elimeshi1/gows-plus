@@ -143,6 +143,12 @@ func main() {
 	log.Infof("Link preview fetch timeout: %s", linkPreviewCfg.FetchTimeout)
 	gows.FetchPreviewTimeout = linkPreviewCfg.FetchTimeout
 
+	keepAliveCfg := getKeepAliveConfig()
+	if keepAliveCfg.IntervalMin > 0 || keepAliveCfg.IntervalMax > 0 {
+		min, max := gows.SetKeepAliveInterval(keepAliveCfg.IntervalMin, keepAliveCfg.IntervalMax)
+		log.Infof("Using keepalive ping interval: min=%s max=%s", min, max)
+	}
+
 	// Build the server
 	grpcServer := buildGrpcServer(log)
 	// Open unix socket

@@ -2,14 +2,16 @@ package gows
 
 import (
 	"context"
+	"errors"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/devlikeapro/gows/storage"
 	"github.com/devlikeapro/gows/storage/sqlstorage"
+	_ "github.com/jackc/pgx/v5" // Import the Postgres driver
 	"github.com/jellydator/ttlcache/v3"
-	_ "github.com/jackc/pgx/v5"     // Import the Postgres driver
 	_ "github.com/mattn/go-sqlite3" // Import the SQLite driver
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
@@ -37,6 +39,11 @@ type GoWS struct {
 	// This lets subsequent download attempts reuse the fresh DirectPath without
 	// sending another receipt, even if the first waiter already timed out.
 	mediaRetryEvents *ttlcache.Cache[types.MessageID, *events.MediaRetry]
+	// cappingFetchMu/cappingFetchLast throttle the message capping re-fetches driven by sends
+	// and the periodic poller (connect/timelock/475/463 bypass it).
+	cappingFetchMu    sync.Mutex
+	cappingFetchLast  time.Time
+	cappingPollerOnce sync.Once
 }
 
 func (gows *GoWS) reissueEvent(event interface{}) {
@@ -57,6 +64,18 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 			LID:      &gows.Store.LID,
 			PushName: gows.Store.PushName,
 		}
+		// Actively fetch the current reachout timelock state, so the session
+		// learns it right after (re)start without waiting for a push notification.
+		go gows.fetchReachoutTimelock()
+		// Same for the new-chat message capping (there is no push for it).
+		go gows.fetchMessageCapping()
+
+	case *events.NotifyAccountReachoutTimelock:
+		// The timelock and the new-chat capping are siblings in WhatsApp's
+		// cold-outreach limiting, so refresh the capping whenever the timelock
+		// changes (WhatsApp pushes no capping notification of its own).
+		go gows.fetchMessageCapping()
+		data = event
 
 	case *events.Message:
 		msg := event.(*events.Message)
@@ -95,7 +114,6 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 	gows.emitEvent(data)
 }
 
-
 func (gows *GoWS) handleEvent(event interface{}) {
 	go gows.reissueEvent(event)
 	go gows.storageEventHandler.handleEvent(event)
@@ -109,6 +127,11 @@ func (gows *GoWS) Start() error {
 		gows.RemoveEventHandler(gows.eventHandlerID)
 	}
 	gows.eventHandlerID = gows.AddEventHandler(gows.handleEvent)
+
+	// Start the periodic message capping poller once for the session lifetime.
+	gows.cappingPollerOnce.Do(func() {
+		go gows.pollMessageCapping()
+	})
 
 	// Not connected, listen for QR code events
 	if gows.Store.ID == nil {
@@ -156,6 +179,80 @@ func (gows *GoWS) ensureNCTSalt() {
 	gows.Log.Infof("NCT salt is empty — forcing regular_high app-state sync")
 	if err := gows.FetchAppState(gows.Context, appstate.WAPatchRegularHigh, false, false); err != nil {
 		gows.Log.Errorf("Failed to force regular_high app-state sync: %v", err)
+	}
+}
+
+// fetchReachoutTimelock fetches the current account reachout timelock state and
+// re-emits it as *events.NotifyAccountReachoutTimelock, so the API side handles
+// the fetched state exactly like the push notification.
+func (gows *GoWS) fetchReachoutTimelock() {
+	ctx, cancel := context.WithTimeout(gows.Context, 30*time.Second)
+	defer cancel()
+
+	result, err := gows.FetchAccountReachoutTimelock(ctx)
+	if err != nil {
+		gows.Log.Errorf("Failed to fetch account reachout timelock: %v", err)
+		return
+	}
+	gows.emitEvent(result)
+}
+
+// Message capping re-fetch cadence.
+const (
+	// cappingMinFetchInterval throttles the send-driven and periodic fetches so
+	// a burst of sends does not query the server on every message.
+	cappingMinFetchInterval = 60 * time.Second
+	// cappingPollInterval is the periodic safety-net re-fetch while connected. Matches WhatsApp
+	// Web's fetch TTL (wa_individual_new_chat_msg_capping_fetch_ttl_seconds, default 3600s) so we
+	// do not query more often than a real client would.
+	cappingPollInterval = time.Hour
+)
+
+// fetchMessageCapping fetches the current new-chat message capping state and
+// re-emits it as *MessageCapping, so the API side can track the account's
+// per-cycle quota. Called (bypassing the throttle) on connect, whenever the
+// reachout timelock changes, and when a send is rejected with error 475 or 463.
+func (gows *GoWS) fetchMessageCapping() {
+	gows.cappingFetchMu.Lock()
+	gows.cappingFetchLast = time.Now()
+	gows.cappingFetchMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(gows.Context, 30*time.Second)
+	defer cancel()
+
+	result, err := gows.FetchMessageCapping(ctx, MessageCappingTypeNewChatThread)
+	if err != nil {
+		gows.Log.Errorf("Failed to fetch message capping: %v", err)
+		return
+	}
+	gows.emitEvent(result)
+}
+
+// fetchMessageCappingThrottled fetches the capping only if the last fetch is
+// older than cappingMinFetchInterval. Used by the send and periodic triggers,
+// which fire often and only need an approximately fresh value.
+func (gows *GoWS) fetchMessageCappingThrottled() {
+	gows.cappingFetchMu.Lock()
+	recent := time.Since(gows.cappingFetchLast) < cappingMinFetchInterval
+	gows.cappingFetchMu.Unlock()
+	if recent {
+		return
+	}
+	gows.fetchMessageCapping()
+}
+
+// pollMessageCapping re-fetches the capping periodically while connected, as a
+// safety net for state that changes without a send (e.g. the cycle resetting).
+func (gows *GoWS) pollMessageCapping() {
+	ticker := time.NewTicker(cappingPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-gows.Context.Done():
+			return
+		case <-ticker.C:
+			gows.fetchMessageCappingThrottled()
+		}
 	}
 }
 
@@ -263,6 +360,9 @@ func BuildSession(
 		0,
 		sync.Map{},
 		retryEventsCache,
+		sync.Mutex{},
+		time.Time{},
+		sync.Once{},
 	}
 	if storageCfg == (StorageConfig{}) {
 		storageCfg = DefaultStorageConfig()
@@ -331,6 +431,14 @@ func (gows *GoWS) SendMessage(ctx context.Context, to types.JID, msg *waE2E.Mess
 	} else {
 		resp, err = gows.Client.SendMessage(ctx, to, msg, extra)
 		if err != nil {
+			// 475 is NewChatMessagesCapped - the direct "quota exhausted" nack WhatsApp Web reacts
+			// to (it marks the account CAPPED on the spot; we re-fetch to get the real numbers).
+			// 463 is NackCallerReachoutTimelocked - the timelock sibling of the capping, so the
+			// quota state likely changed together with it.
+			if errors.Is(err, whatsmeow.ErrServerReturnedError) &&
+				(strings.HasSuffix(err.Error(), " 475") || strings.HasSuffix(err.Error(), " 463")) {
+				go gows.fetchMessageCapping()
+			}
 			return nil, err
 		}
 	}

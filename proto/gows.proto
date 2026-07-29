@@ -109,6 +109,7 @@ service MessageService {
   rpc SetGroupPicture(SetPictureRequest) returns (Empty);
   rpc SetGroupLocked(JidBoolRequest) returns (Empty); // change info only by admins
   rpc SetGroupAnnounce(JidBoolRequest) returns (Empty); // send messages only by admins
+  rpc SetGroupMemberAddMode(JidBoolRequest) returns (Empty); // who can add members - true - all members, false - admins only
   rpc UpdateGroupParticipants(UpdateParticipantsRequest) returns (JsonList);
 
   //
@@ -120,6 +121,12 @@ service MessageService {
   rpc SubscribePresence(SubscribePresenceRequest) returns (Empty);
   rpc CheckPhones(CheckPhonesRequest) returns (CheckPhonesResponse);
   rpc MarkChatUnread(ChatUnreadRequest) returns (Empty);
+
+  //
+  // Account
+  //
+  // Fetch the account's current new-chat message capping (per-cycle quota).
+  rpc FetchMessageCapping(Session) returns (Json);
 
   //
   // Message

@@ -3,12 +3,15 @@ package gows
 import (
 	"context"
 	"errors"
+	"strings"
+	"sync"
+	"time"
+
 	gowsLog "github.com/devlikeapro/gows/log"
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/store"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	"strings"
-	"sync"
 )
 
 var ErrSessionNotFound = errors.New("session not found")
@@ -83,6 +86,24 @@ var statusParticipantsBatchSize = 500
 
 func SetStatusParticipantsBatchSize(n int) {
 	statusParticipantsBatchSize = n
+}
+
+// SetKeepAliveInterval overrides whatsmeow's websocket keepalive ping interval.
+// Returns the resulting min/max so the caller can log what is in effect.
+func SetKeepAliveInterval(min time.Duration, max time.Duration) (time.Duration, time.Duration) {
+	// Zero values leave the whatsmeow default (min 20s / max 30s) in place
+	if min > 0 {
+		whatsmeow.KeepAliveIntervalMin = min
+	}
+	if max > 0 {
+		whatsmeow.KeepAliveIntervalMax = max
+	}
+	// whatsmeow picks a random interval in [min, max);
+	// max must be strictly greater than min or rand.Int64N panics at ping time
+	if whatsmeow.KeepAliveIntervalMax <= whatsmeow.KeepAliveIntervalMin {
+		whatsmeow.KeepAliveIntervalMax = whatsmeow.KeepAliveIntervalMin + 10*time.Second
+	}
+	return whatsmeow.KeepAliveIntervalMin, whatsmeow.KeepAliveIntervalMax
 }
 
 func GetDeviceProps() *waCompanionReg.DeviceProps {

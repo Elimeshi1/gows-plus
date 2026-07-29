@@ -22,6 +22,25 @@ func TestLinkPreviewTimeout_Custom(t *testing.T) {
 	}
 }
 
+func TestKeepAliveConfig_NotSet(t *testing.T) {
+	cfg := getKeepAliveConfig()
+	if cfg.IntervalMin != 0 || cfg.IntervalMax != 0 {
+		t.Fatalf("expected 0/0 when unset, got %s/%s", cfg.IntervalMin, cfg.IntervalMax)
+	}
+}
+
+func TestKeepAliveConfig_Values(t *testing.T) {
+	t.Setenv("WAHA_GOWS_KEEPALIVE_INTERVAL_MIN", "8s")
+	t.Setenv("WAHA_GOWS_KEEPALIVE_INTERVAL_MAX", "12s")
+	cfg := getKeepAliveConfig()
+	if cfg.IntervalMin != 8*time.Second {
+		t.Fatalf("expected min=8s, got %s", cfg.IntervalMin)
+	}
+	if cfg.IntervalMax != 12*time.Second {
+		t.Fatalf("expected max=12s, got %s", cfg.IntervalMax)
+	}
+}
+
 func parseDevicePropsConfig(t *testing.T) DevicePropsConfig {
 	t.Helper()
 	cfg := DevicePropsConfig{}

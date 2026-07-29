@@ -32,6 +32,24 @@ entirely and shows a generic "Other device".
 Device props are only sent when a device registers, so change these, restart the **container**, and
 then **repair** (logout/scan QR) a session for it to take effect.
 
+## Keepalive
+
+whatsmeow pings the websocket on a random interval in `[min, max)` (default 20-30s)
+to keep the connection alive. Some proxies (residential/rotating) reap an idle
+tunnel sooner than that, so the ping lands on an already-dead socket every time,
+producing constant `Keepalive timed out` -> reconnect loops (session flapping).
+Lower the interval below the proxy's idle-reap window to keep the tunnel warm.
+
+Both values are Go durations (`8s`, `1m`); `0` or unset leaves the whatsmeow default.
+`max` must be strictly greater than `min` - if it isn't, `max` is adjusted to `min + 10s`.
+The resulting interval is logged on start.
+
+```bash
+# Ping every 8-12s instead of the default 20-30s
+WAHA_GOWS_KEEPALIVE_INTERVAL_MIN=8s
+WAHA_GOWS_KEEPALIVE_INTERVAL_MAX=12s
+```
+
 ## GOWS Device Props
 
 Low-level device capability flags sent to WhatsApp during session linking.
