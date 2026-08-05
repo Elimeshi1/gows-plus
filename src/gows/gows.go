@@ -394,9 +394,6 @@ func BuildSession(
 		time.Time{},
 		sync.Once{},
 	}
-	if storageCfg == (StorageConfig{}) {
-		storageCfg = DefaultStorageConfig()
-	}
 	gows.Storage = BuildStorage(container, gows, storageCfg)
 	gows.storageEventHandler = &StorageEventHandler{
 		gows:       gows,
