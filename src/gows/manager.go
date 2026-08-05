@@ -89,6 +89,11 @@ func SetDeviceAndBrowser(device string, browser string) {
 var statusParticipantsBatchSize = 5000
 
 func SetStatusParticipantsBatchSize(n int) {
+	// lo.Chunk requires a positive size, and the batch size is now the only thing
+	// deciding how a status is split, so refuse a value that would panic.
+	if n <= 0 {
+		return
+	}
 	statusParticipantsBatchSize = n
 }
 
@@ -99,6 +104,31 @@ var statusBatchTimeout = 180 * time.Second
 
 func SetStatusBatchTimeout(d time.Duration) {
 	statusBatchTimeout = d
+}
+
+// statusBatchDelay is the pause between status batches.
+// Set at startup via SetStatusBatchDelay; defaults to 1.5s.
+var statusBatchDelay = 1500 * time.Millisecond
+
+func SetStatusBatchDelay(d time.Duration) {
+	statusBatchDelay = d
+}
+
+// statusBatchMaxRetries is how many extra attempts a status batch gets after a
+// transient failure. Set at startup via SetStatusBatchRetry; defaults to 2.
+var statusBatchMaxRetries = 2
+
+// statusBatchRetryBackoff is the wait before the first retry, tripling on each
+// further attempt. Set at startup via SetStatusBatchRetry; defaults to 5s.
+var statusBatchRetryBackoff = 5 * time.Second
+
+func SetStatusBatchRetry(maxRetries int, backoff time.Duration) {
+	if maxRetries >= 0 {
+		statusBatchMaxRetries = maxRetries
+	}
+	if backoff > 0 {
+		statusBatchRetryBackoff = backoff
+	}
 }
 
 // SetKeepAliveInterval overrides whatsmeow's websocket keepalive ping interval.

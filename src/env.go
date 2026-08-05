@@ -35,6 +35,15 @@ type StatusConfig struct {
 	// though the batch is delivered.
 	// Go duration format: 90s, 180s, 5m.
 	BatchTimeout time.Duration `env:"WAHA_GOWS_STATUS_BATCH_TIMEOUT" envDefault:"180s"`
+	// BatchDelay is the pause between batches, so a large audience goes out at a
+	// steady cadence instead of as a burst of back-to-back stanzas.
+	BatchDelay time.Duration `env:"WAHA_GOWS_STATUS_BATCH_DELAY" envDefault:"1500ms"`
+	// BatchMaxRetries is how many extra attempts a batch gets after a transient
+	// failure (ack timeout or 429). Zero disables retrying.
+	BatchMaxRetries int `env:"WAHA_GOWS_STATUS_BATCH_MAX_RETRIES" envDefault:"2"`
+	// BatchRetryBackoff is the wait before the first retry; it triples on each
+	// further attempt (5s, 15s, ...).
+	BatchRetryBackoff time.Duration `env:"WAHA_GOWS_STATUS_BATCH_RETRY_BACKOFF" envDefault:"5s"`
 }
 
 func getStatusConfig() StatusConfig {
