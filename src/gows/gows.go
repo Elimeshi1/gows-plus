@@ -79,18 +79,21 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 
 	case *events.Message:
 		msg := event.(*events.Message)
+		// Enrich a shallow copy - the storage event handler processes the original pointer concurrently
+		enriched := *msg
+		gows.enrichAltJIDs(&enriched)
 		sem := msg.Message.GetSecretEncryptedMessage()
 		if sem != nil && sem.GetSecretEncType() == waE2E.SecretEncryptedMessage_MESSAGE_EDIT {
 			go gows.handleSecretMessageEdit(gows.Context, msg)
 			return
 		} else if msg.Message.GetEncEventResponseMessage() != nil {
-			data = event
+			data = &enriched
 			go gows.handleEncEventResponse(gows.Context, msg)
 		} else if msg.Message.GetPollUpdateMessage() != nil {
-			data = event
+			data = &enriched
 			go gows.handleEncPollVote(gows.Context, msg)
 		} else {
-			data = event
+			data = &enriched
 		}
 
 	case *events.MediaRetry:
@@ -112,6 +115,33 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 	}
 
 	gows.emitEvent(data)
+}
+
+// enrichAltJIDs fills the phone number alt JIDs from the LID store for LID-addressed messages
+// whose stanza didn't carry the sender_pn / peer_recipient_pn attributes.
+func (gows *GoWS) enrichAltJIDs(msg *events.Message) {
+	if gows.Client == nil || gows.Store == nil || gows.Store.LIDs == nil {
+		return
+	}
+	info := &msg.Info
+	// Incoming DM or group message from a @lid sender
+	if info.Sender.Server == types.HiddenUserServer && info.SenderAlt.IsEmpty() {
+		pn, err := gows.Store.LIDs.GetPNForLID(gows.Context, info.Sender)
+		if err != nil {
+			gows.Log.Warnf("Failed to get PN for sender %v: %v", info.Sender, err)
+		} else if !pn.IsEmpty() {
+			info.SenderAlt = pn
+		}
+	}
+	// Own message in a @lid-addressed DM
+	if info.IsFromMe && info.Chat.Server == types.HiddenUserServer && info.RecipientAlt.IsEmpty() {
+		pn, err := gows.Store.LIDs.GetPNForLID(gows.Context, info.Chat)
+		if err != nil {
+			gows.Log.Warnf("Failed to get PN for chat %v: %v", info.Chat, err)
+		} else if !pn.IsEmpty() {
+			info.RecipientAlt = pn
+		}
+	}
 }
 
 func (gows *GoWS) handleEvent(event interface{}) {

@@ -539,6 +539,7 @@ message PhoneInfo {
   string phone = 1;
   string jid = 2;
   bool registered = 3;
+  string pn = 4;
 }
 
 message CheckPhonesResponse {

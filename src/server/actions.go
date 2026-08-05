@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"time"
+
 	"github.com/devlikeapro/gows/gows"
 	"github.com/devlikeapro/gows/proto"
 	"github.com/devlikeapro/gows/storage"
@@ -10,7 +12,6 @@ import (
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
-	"time"
 )
 
 func (s *Server) GetProfilePicture(ctx context.Context, req *__.ProfilePictureRequest) (*__.ProfilePictureResponse, error) {
@@ -65,6 +66,7 @@ func (s *Server) CheckPhones(ctx context.Context, req *__.CheckPhonesRequest) (*
 			Phone:      r.Query,
 			Jid:        r.JID.String(),
 			Registered: r.IsIn,
+			Pn:         r.PhoneNumber.String(),
 		}
 	}
 	return &__.CheckPhonesResponse{Infos: infos}, nil
