@@ -365,6 +365,7 @@ func BuildSession(
 		_ = container.Close()
 		return nil, err
 	}
+	ApplyDeviceStorageConfig(deviceStore, storageCfg)
 
 	// Configure the client
 	client := whatsmeow.NewClient(deviceStore, log.Sub("Client"))

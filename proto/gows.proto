@@ -241,6 +241,8 @@ message SessionStorageConfig {
   optional bool groups = 2;
   optional bool chats = 3;
   optional bool labels = 4;
+  optional bool contacts = 5;
+  optional bool message_secrets = 6;
 }
 
 message SessionProxyConfig {

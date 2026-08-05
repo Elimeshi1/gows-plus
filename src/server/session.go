@@ -74,6 +74,12 @@ func (s *Server) StartSession(ctx context.Context, req *__.StartSessionRequest) 
 		if req.Config.Storage.Labels != nil {
 			cfg.Storage.Labels = req.Config.Storage.GetLabels()
 		}
+		if req.Config.Storage.Contacts != nil {
+			cfg.Storage.Contacts = req.Config.Storage.GetContacts()
+		}
+		if req.Config.Storage.MessageSecrets != nil {
+			cfg.Storage.MessageSecrets = req.Config.Storage.GetMessageSecrets()
+		}
 	}
 
 	session := req.GetId()

@@ -29,18 +29,22 @@ type StoreConfig struct {
 }
 
 type StorageConfig struct {
-	Messages bool
-	Groups   bool
-	Chats    bool
-	Labels   bool
+	Messages       bool
+	Groups         bool
+	Chats          bool
+	Labels         bool
+	Contacts       bool
+	MessageSecrets bool
 }
 
 func DefaultStorageConfig() StorageConfig {
 	return StorageConfig{
-		Messages: true,
-		Groups:   true,
-		Chats:    true,
-		Labels:   true,
+		Messages:       true,
+		Groups:         true,
+		Chats:          true,
+		Labels:         true,
+		Contacts:       true,
+		MessageSecrets: true,
 	}
 }
 

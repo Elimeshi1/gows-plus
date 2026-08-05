@@ -6,12 +6,30 @@ import (
 	"github.com/devlikeapro/gows/storage/noop"
 	"github.com/devlikeapro/gows/storage/sqlstorage"
 	"github.com/devlikeapro/gows/storage/views"
+	"go.mau.fi/whatsmeow/store"
 )
+
+// ApplyDeviceStorageConfig swaps disabled whatsmeow device stores for no-ops.
+// The NoopStore must keep Error nil: a non-nil error aborts app state sync and status broadcasts,
+// while zero values just skip persisting.
+func ApplyDeviceStorageConfig(device *store.Device, cfg StorageConfig) {
+	if !cfg.Contacts {
+		device.Contacts = &store.NoopStore{}
+	}
+	if !cfg.MessageSecrets {
+		device.MsgSecrets = &store.NoopStore{}
+	}
+}
 
 func BuildStorage(container *sqlstorage.GContainer, gows *GoWS, cfg StorageConfig) *storage.Storage {
 	st := &storage.Storage{}
 	st.ChatEphemeralSetting = container.NewChatEphemeralSettingStorage()
-	st.Contacts = meowstorage.NewContactStorage(gows.Store)
+
+	if cfg.Contacts {
+		st.Contacts = meowstorage.NewContactStorage(gows.Store)
+	} else {
+		st.Contacts = noop.NewContactStorage()
+	}
 
 	if cfg.Messages {
 		st.Messages = container.NewMessageStorage()
