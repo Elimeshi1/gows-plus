@@ -1,6 +1,8 @@
 package gows
 
 import (
+	"context"
+
 	"github.com/devlikeapro/gows/storage"
 	meowstorage "github.com/devlikeapro/gows/storage/meow"
 	"github.com/devlikeapro/gows/storage/noop"
@@ -19,6 +21,22 @@ func ApplyDeviceStorageConfig(device *store.Device, cfg StorageConfig) {
 	if !cfg.MessageSecrets {
 		device.MsgSecrets = &store.NoopStore{}
 	}
+	if !device.Initialized {
+		device.Container = &DeviceContainerGows{device.Container, cfg}
+	}
+}
+
+// DeviceContainerGows re-applies the storage config after the first Save (pairing),
+// when whatsmeow's initializeDevice overwrites all device stores with the SQL store.
+type DeviceContainerGows struct {
+	store.DeviceContainer
+	cfg StorageConfig
+}
+
+func (c *DeviceContainerGows) PutDevice(ctx context.Context, device *store.Device) error {
+	err := c.DeviceContainer.PutDevice(ctx, device)
+	ApplyDeviceStorageConfig(device, c.cfg)
+	return err
 }
 
 func BuildStorage(container *sqlstorage.GContainer, gows *GoWS, cfg StorageConfig) *storage.Storage {
