@@ -125,6 +125,8 @@ service MessageService {
   //
   // Account
   //
+  // Fetch the account's current reachout timelock state.
+  rpc FetchReachoutTimelock(Session) returns (Json);
   // Fetch the account's current new-chat message capping (per-cycle quota).
   rpc FetchMessageCapping(Session) returns (Json);
 
