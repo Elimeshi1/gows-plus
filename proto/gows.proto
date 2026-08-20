@@ -111,6 +111,9 @@ service MessageService {
   rpc SetGroupAnnounce(JidBoolRequest) returns (Empty); // send messages only by admins
   rpc SetGroupMemberAddMode(JidBoolRequest) returns (Empty); // who can add members - true - all members, false - admins only
   rpc UpdateGroupParticipants(UpdateParticipantsRequest) returns (JsonList);
+  rpc SetGroupJoinApprovalMode(JidBoolRequest) returns (Empty);
+  rpc GetGroupRequestParticipants(JidRequest) returns (JsonList);
+  rpc UpdateGroupRequestParticipants(UpdateRequestParticipantsRequest) returns (JsonList);
 
   //
   // Actions
@@ -321,6 +324,18 @@ message UpdateParticipantsRequest {
   string jid = 2;
   repeated string participants = 3;
   ParticipantAction action = 4;
+}
+
+enum ParticipantRequestAction {
+  APPROVE = 0;
+  REJECT = 1;
+}
+
+message UpdateRequestParticipantsRequest {
+  Session session = 1;
+  string jid = 2;
+  repeated string participants = 3;
+  ParticipantRequestAction action = 4;
 }
 message GroupCodeRequest {
   Session session = 1;

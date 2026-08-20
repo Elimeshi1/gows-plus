@@ -100,6 +100,14 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 			data = &enriched
 		}
 
+	case *events.GroupInfo:
+		evt := event.(*events.GroupInfo)
+		// Membership (join) requests arrive in UnknownChanges - reissue them as dedicated events
+		for _, joinRequestEvent := range parseGroupJoinRequestEvents(evt) {
+			gows.emitEvent(joinRequestEvent)
+		}
+		data = event
+
 	case *events.MediaRetry:
 		evt := event.(*events.MediaRetry)
 		// Always cache so that callers whose 60 s wait already expired can still
