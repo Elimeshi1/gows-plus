@@ -1,6 +1,6 @@
 module github.com/devlikeapro/gows
 
-go 1.25.0
+go 1.26.0
 
 toolchain go1.26.4
 
@@ -27,7 +27,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/samber/lo v1.49.1
-	go.mau.fi/util v0.10.0
+	go.mau.fi/util v0.10.1-0.20260820140024-eb612d936fde
 )
 
 require (
@@ -64,4 +64,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260820025705-689ef08e5c5d
+replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow v0.0.0-20260828071610-7632fe682de1

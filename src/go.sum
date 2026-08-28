@@ -27,8 +27,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/devlikeapro/goscraper v0.0.0-20260224081950-3e513f796e42 h1:Tn2PllrFPMnXIh2Jyyp7QZX1TYz1XeoJmrrdmgJoEWA=
 github.com/devlikeapro/goscraper v0.0.0-20260224081950-3e513f796e42/go.mod h1:Ezk+40Xo1pBhyjQxDWnPpujW7munML5zGsdecYMi43o=
-github.com/devlikeapro/whatsmeow v0.0.0-20260820025705-689ef08e5c5d h1:pXIZnHmjulSg2dXmlgE4rM0Ky5GEmqjknEKM21fLZ5I=
-github.com/devlikeapro/whatsmeow v0.0.0-20260820025705-689ef08e5c5d/go.mod h1:UFP0D7aj+biuFejsllcoNiHTQorh0ODFUyG4Txpqfks=
+github.com/devlikeapro/whatsmeow v0.0.0-20260828071610-7632fe682de1 h1:+cAky1faJYE2lBIe3fI2hi53thpyC13ph1eZPRcILxo=
+github.com/devlikeapro/whatsmeow v0.0.0-20260828071610-7632fe682de1/go.mod h1:aMd13H2xFFGH9cskcvxo4Aae+TmyFN38yw+HvsrpwVg=
 github.com/dhui/dktest v0.4.5 h1:uUfYBIVREmj/Rw6MvgmqNAYzTiKOHJak+enB5Di73MM=
 github.com/dhui/dktest v0.4.5/go.mod h1:tmcyeHDKagvlDrz7gDKq4UAJOLIfVZYkfD5OnHDwcCo=
 github.com/disintegration/imaging v1.6.2/go.mod h1:44/5580QXChDfwIclfc/PCwrr44amcmDAg8hxG0Ewe4=
@@ -159,8 +159,8 @@ github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9de
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 go.mau.fi/libsignal v0.2.2 h1:QV+XdzQkm3x3aSG7FcqfGSZuFXz83pRZPBFaPygHbOU=
 go.mau.fi/libsignal v0.2.2/go.mod h1:CRlIQg2J8uYTfDFvNoO8/KcZjs5cey0vbc6oj/bssY0=
-go.mau.fi/util v0.10.0 h1:vH9IXZmfBKa96p47HxrVqEPkrj02zDJg3o4EF172+Lk=
-go.mau.fi/util v0.10.0/go.mod h1:uZwpm9sK4wO2Qqy+t6QoVq29szMsRxWXp9/BkQLG4xk=
+go.mau.fi/util v0.10.1-0.20260820140024-eb612d936fde h1:eMHY9dMDkNuDMWhfTbMZHbbsxj7G6mfujjKei1HaFQM=
+go.mau.fi/util v0.10.1-0.20260820140024-eb612d936fde/go.mod h1:z0ZZNt4hq3FZbUKnunexE/QscCx7VkLvQSvtggc/aE8=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 h1:TT4fX+nBOA/+LUkobKGW1ydGcn+G3vRw9+g5HwCphpk=
