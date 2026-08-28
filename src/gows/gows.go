@@ -141,6 +141,8 @@ func (gows *GoWS) enrichAltJIDs(msg *events.Message) {
 		pn, err := gows.Store.LIDs.GetPNForLID(gows.Context, info.Sender)
 		if err != nil {
 			gows.Log.Warnf("Failed to get PN for sender %v: %v", info.Sender, err)
+		} else if !pn.IsEmpty() && !gows.validLIDPNPair(info.Sender, pn) {
+			gows.Log.Warnf("Ignoring suspicious stored LID-PN mapping %v => %v", info.Sender, pn)
 		} else if !pn.IsEmpty() {
 			info.SenderAlt = pn
 		}
@@ -150,6 +152,8 @@ func (gows *GoWS) enrichAltJIDs(msg *events.Message) {
 		pn, err := gows.Store.LIDs.GetPNForLID(gows.Context, info.Chat)
 		if err != nil {
 			gows.Log.Warnf("Failed to get PN for chat %v: %v", info.Chat, err)
+		} else if !pn.IsEmpty() && !gows.validLIDPNPair(info.Chat, pn) {
+			gows.Log.Warnf("Ignoring suspicious stored LID-PN mapping %v => %v", info.Chat, pn)
 		} else if !pn.IsEmpty() {
 			info.RecipientAlt = pn
 		}

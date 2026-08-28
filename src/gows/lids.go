@@ -43,27 +43,53 @@ func (gows *GoWS) resolvePNByLidFromServer(ctx context.Context, lid types.JID) (
 	if err != nil {
 		return types.EmptyJID, err
 	}
+	pn := pnFromUsyncResponse(lid, list)
+	if pn.IsEmpty() {
+		return types.EmptyJID, nil
+	}
+	if !gows.validLIDPNPair(lid, pn) {
+		gows.Log.Warnf("Ignoring suspicious LID-PN resolution %v => %v", lid, pn)
+		return types.EmptyJID, nil
+	}
+	gows.StoreLIDPNMapping(ctx, lid, pn)
+	return pn, nil
+}
+
+// pnFromUsyncResponse extracts the phone number for the queried LID from the usync response.
+// A pn_jid counts only when its user node is addressed to the queried LID; a bare phone jid counts
+// only when it is the single user node - the answer to our single-user query.
+func pnFromUsyncResponse(lid types.JID, list *waBinary.Node) types.JID {
+	var users []waBinary.Node
 	for _, child := range list.GetChildren() {
-		if child.Tag != "user" {
-			continue
+		if child.Tag == "user" {
+			users = append(users, child)
 		}
-		ag := child.AttrGetter()
+	}
+	for _, user := range users {
+		ag := user.AttrGetter()
 		jid := ag.OptionalJIDOrEmpty("jid")
 		pnJid := ag.OptionalJIDOrEmpty("pn_jid")
-		// The phone number may come either in the pn_jid attribute (lid addressing) or as the canonical jid
-		var pn = types.EmptyJID
-		if pnJid.Server == types.DefaultUserServer {
-			pn = pnJid
-		} else if jid.Server == types.DefaultUserServer {
-			pn = jid
+		if jid.Server == types.HiddenUserServer && jid.User == lid.User && pnJid.Server == types.DefaultUserServer {
+			return pnJid
 		}
-		if pn.IsEmpty() {
-			continue
+		if len(users) == 1 && jid.Server == types.DefaultUserServer {
+			return jid
 		}
-		gows.StoreLIDPNMapping(ctx, lid, pn)
-		return pn, nil
 	}
-	return types.EmptyJID, nil
+	return types.EmptyJID
+}
+
+// validLIDPNPair rejects mapping a foreign LID to the own phone number - a peer can never be me.
+func (gows *GoWS) validLIDPNPair(lid types.JID, pn types.JID) bool {
+	ownPN := gows.Store.GetJID()
+	ownLID := gows.Store.GetLID()
+	if ownPN.IsEmpty() {
+		return true
+	}
+	if pn.User == ownPN.User && lid.User != ownLID.User {
+		return false
+	}
+	return true
 }
 
 // ResolveLidByPN resolves the LID for a phone number - first from the local store,
