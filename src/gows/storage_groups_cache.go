@@ -1,6 +1,7 @@
 package gows
 
 import (
+	"fmt"
 	"github.com/devlikeapro/gows/storage"
 	"github.com/devlikeapro/gows/storage/helpers"
 	"go.mau.fi/whatsmeow/types"
@@ -83,20 +84,35 @@ func (g *GroupCacheStorage) fetchGroupsUnlocked() error {
 	if err != nil {
 		return err
 	}
-	err = g.groups.DeleteGroups()
+	existing, err := g.groups.GetAllGroups(storage.Sort{Field: "id", Order: storage.SortAsc}, storage.Pagination{})
 	if err != nil {
 		return err
 	}
+	// Upsert first, remove stale groups after - a failed refresh must not wipe the cache
+	fetched := make(map[types.JID]bool, len(groups))
 	for _, group := range groups {
 		err = g.UpsertOneGroup(group)
 		if err != nil {
-			g.log.Errorf("Error upserting group %s: %v", group.JID, err)
+			// Don't mark the cache as fresh, otherwise a partial result is pinned for refreshInterval
+			return fmt.Errorf("upserting group %s: %w", group.JID, err)
+		}
+		fetched[group.JID] = true
+	}
+	for _, group := range existing {
+		if fetched[group.JID] {
+			continue
+		}
+		err = g.DeleteGroup(group.JID)
+		if err != nil {
+			g.log.Warnf("Error deleting stale group %s: %v", group.JID, err)
 		}
 	}
-	g.lastTimeRefreshed = time.Now()
+	// Don't cache an empty result - it may be a transient server response, refetch on the next call
+	if len(groups) > 0 {
+		g.lastTimeRefreshed = time.Now()
+	}
 	g.log.Debugf("Groups refreshed")
 	return nil
-
 }
 
 func (g *GroupCacheStorage) fetchGroupsIfNeeded(lock bool) (bool, error) {
