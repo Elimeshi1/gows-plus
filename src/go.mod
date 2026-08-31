@@ -1,6 +1,6 @@
 module github.com/devlikeapro/gows
 
-go 1.25.0
+go 1.26.0
 
 toolchain go1.26.4
 
@@ -14,12 +14,12 @@ require (
 	github.com/h2non/bimg v1.1.9
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/jmoiron/sqlx v1.4.0
-	github.com/mattn/go-sqlite3 v1.14.48
+	github.com/mattn/go-sqlite3 v1.14.49
 	github.com/stretchr/testify v1.11.1
 	github.com/u2takey/ffmpeg-go v0.5.0
 	go.mau.fi/whatsmeow v0.0.0-20260721154117-8b4a8ba0d318 // find "replace" for the project below with a fork project
 	google.golang.org/grpc v1.77.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
@@ -27,7 +27,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/samber/lo v1.49.1
-	go.mau.fi/util v0.9.12-0.20260717235539-f9ffa7eca58d
+	go.mau.fi/util v0.10.1-0.20260820140024-eb612d936fde
 )
 
 require (
@@ -47,25 +47,25 @@ require (
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.23 // indirect
-	github.com/petermattis/goid v0.0.0-20260716134002-a9b348f0a2b9 // indirect
+	github.com/petermattis/goid v0.0.0-20260816044145-ed329add6b1b // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/u2takey/go-utils v0.3.1 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.36 // indirect
 	go.mau.fi/libsignal v0.2.2 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
-	golang.org/x/exp v0.0.0-20260718201538-764159d718ef // indirect
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260720211330-0afa2a65878a // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 // [WAHA] whatsmeow now carries our patches (no-op PN->LID migration skip,
-// PreDecryptIgnore hook); track the Elimeshi1 fork, rebased onto devlikeapro's
-// 23a19c7a2726 pin (the one v1.0.45 requires).
+// PreDecryptIgnore hook); track the Elimeshi1 fork, which is devlikeapro's
+// 1ba57cc32ea6 pin (the one upstream/dev requires) plus those patches.
 // goscraper is left on devlikeapro (rarely changes).
-replace go.mau.fi/whatsmeow => github.com/Elimeshi1/whatsmeow v0.0.0-20260729162037-48ecf0d7b052
+replace go.mau.fi/whatsmeow => github.com/Elimeshi1/whatsmeow v0.0.0-20260831083752-a8924edacd99

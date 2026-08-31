@@ -418,17 +418,17 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 				externalShareFullVideoDurationInSeconds = &zero
 			}
 			message.VideoMessage = &waE2E.VideoMessage{
-				Caption:                                proto.String(req.Text),
-				Mimetype:                               proto.String(req.Media.Mimetype),
-				URL:                                    &mediaResponse.URL,
-				DirectPath:                             &mediaResponse.DirectPath,
-				MediaKey:                               mediaResponse.MediaKey,
-				FileEncSHA256:                          mediaResponse.FileEncSHA256,
-				FileSHA256:                             mediaResponse.FileSHA256,
-				FileLength:                             &mediaResponse.FileLength,
-				Seconds:                                durationSeconds,
-				JPEGThumbnail:                          thumbnail,
-				GifPlayback:                            gifPlayback,
+				Caption:                                 proto.String(req.Text),
+				Mimetype:                                proto.String(req.Media.Mimetype),
+				URL:                                     &mediaResponse.URL,
+				DirectPath:                              &mediaResponse.DirectPath,
+				MediaKey:                                mediaResponse.MediaKey,
+				FileEncSHA256:                           mediaResponse.FileEncSHA256,
+				FileSHA256:                              mediaResponse.FileSHA256,
+				FileLength:                              &mediaResponse.FileLength,
+				Seconds:                                 durationSeconds,
+				JPEGThumbnail:                           thumbnail,
+				GifPlayback:                             gifPlayback,
 				ExternalShareFullVideoDurationInSeconds: externalShareFullVideoDurationInSeconds,
 			}
 			message.VideoMessage.ContextInfo = contextInfo
@@ -509,6 +509,34 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 					DocumentMessage: documentMessage,
 				},
 			}
+
+		case __.MediaType_STICKER:
+			// Stickers upload with the same media keys as images
+			mediaType = whatsmeow.MediaImage
+			mediaResponse, err = cli.UploadMedia(ctx, jid, req.Media.Content, mediaType)
+			if err != nil {
+				return nil, err
+			}
+
+			// Get sticker dimensions
+			imgSize, err := media.CurrentSize(req.Media.Content)
+			if err != nil {
+				cli.Log.Errorf("Failed to get sticker dimensions: %v", err)
+			}
+
+			// Attach
+			message.StickerMessage = &waE2E.StickerMessage{
+				Mimetype:      proto.String(req.Media.Mimetype),
+				Height:        proto.Uint32(imgSize.Height),
+				Width:         proto.Uint32(imgSize.Width),
+				URL:           &mediaResponse.URL,
+				DirectPath:    &mediaResponse.DirectPath,
+				FileSHA256:    mediaResponse.FileSHA256,
+				FileLength:    &mediaResponse.FileLength,
+				MediaKey:      mediaResponse.MediaKey,
+				FileEncSHA256: mediaResponse.FileEncSHA256,
+			}
+			message.StickerMessage.ContextInfo = contextInfo
 		}
 
 		// Newsletters

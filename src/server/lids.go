@@ -43,18 +43,17 @@ func (s *Server) FindPNByLid(ctx context.Context, req *__.EntityByIdRequest) (*_
 	if err != nil {
 		return nil, err
 	}
-	pn, err := types.ParseJID(req.GetId())
+	lid, err := types.ParseJID(req.GetId())
 	if err != nil {
 		return nil, err
 	}
 
-	cli := gows.Client
-	lid, err := cli.Store.LIDs.GetPNForLID(ctx, pn)
+	pn, err := gows.ResolvePNByLid(ctx, lid)
 	if err != nil {
 		return nil, err
 	}
 
-	return &__.OptionalString{Value: lid.String()}, nil
+	return &__.OptionalString{Value: pn.String()}, nil
 }
 
 func (s *Server) FindLIDByPhoneNumber(ctx context.Context, req *__.EntityByIdRequest) (*__.OptionalString, error) {
@@ -62,16 +61,15 @@ func (s *Server) FindLIDByPhoneNumber(ctx context.Context, req *__.EntityByIdReq
 	if err != nil {
 		return nil, err
 	}
-	lid, err := types.ParseJID(req.GetId())
+	pn, err := types.ParseJID(req.GetId())
 	if err != nil {
 		return nil, err
 	}
 
-	cli := gows.Client
-	pn, err := cli.Store.LIDs.GetLIDForPN(ctx, lid)
+	lid, err := gows.ResolveLidByPN(ctx, pn)
 	if err != nil {
 		return nil, err
 	}
 
-	return &__.OptionalString{Value: pn.String()}, nil
+	return &__.OptionalString{Value: lid.String()}, nil
 }

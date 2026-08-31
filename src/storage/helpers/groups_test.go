@@ -67,6 +67,24 @@ func TestUpdateGroupInfo_UpdateParams(t *testing.T) {
 	assert.True(t, group.GroupAnnounce.IsAnnounce)
 }
 
+func TestUpdateGroupInfo_MembershipApprovalMode(t *testing.T) {
+	group := BuildGroup()
+
+	on := events.GroupInfo{
+		MembershipApprovalMode: &types.GroupMembershipApprovalMode{IsJoinApprovalRequired: true},
+	}
+	err := UpdateGroupInfo(&group, &on)
+	assert.Nil(t, err, "Error should be nil")
+	assert.True(t, group.IsJoinApprovalRequired)
+
+	off := events.GroupInfo{
+		MembershipApprovalMode: &types.GroupMembershipApprovalMode{IsJoinApprovalRequired: false},
+	}
+	err = UpdateGroupInfo(&group, &off)
+	assert.Nil(t, err, "Error should be nil")
+	assert.False(t, group.IsJoinApprovalRequired)
+}
+
 func TestUpdateGroupInfo_Participant_Join(t *testing.T) {
 	group := BuildGroup()
 	jids := []types.JID{notInGroupJid}

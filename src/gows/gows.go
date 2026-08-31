@@ -44,6 +44,10 @@ type GoWS struct {
 	cappingFetchMu    sync.Mutex
 	cappingFetchLast  time.Time
 	cappingPollerOnce sync.Once
+	// timelockFetchMu/timelockFetchLast throttle the 463-driven reachout timelock re-fetches
+	// (connect and the FetchReachoutTimelock RPC bypass it).
+	timelockFetchMu   sync.Mutex
+	timelockFetchLast time.Time
 }
 
 func (gows *GoWS) reissueEvent(event interface{}) {
@@ -79,19 +83,30 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 
 	case *events.Message:
 		msg := event.(*events.Message)
+		// Enrich a shallow copy - the storage event handler processes the original pointer concurrently
+		enriched := *msg
+		gows.enrichAltJIDs(&enriched)
 		sem := msg.Message.GetSecretEncryptedMessage()
 		if sem != nil && sem.GetSecretEncType() == waE2E.SecretEncryptedMessage_MESSAGE_EDIT {
 			go gows.handleSecretMessageEdit(gows.Context, msg)
 			return
 		} else if msg.Message.GetEncEventResponseMessage() != nil {
-			data = event
+			data = &enriched
 			go gows.handleEncEventResponse(gows.Context, msg)
 		} else if msg.Message.GetPollUpdateMessage() != nil {
-			data = event
+			data = &enriched
 			go gows.handleEncPollVote(gows.Context, msg)
 		} else {
-			data = event
+			data = &enriched
 		}
+
+	case *events.GroupInfo:
+		evt := event.(*events.GroupInfo)
+		// Membership (join) requests arrive in UnknownChanges - reissue them as dedicated events
+		for _, joinRequestEvent := range parseGroupJoinRequestEvents(evt) {
+			gows.emitEvent(joinRequestEvent)
+		}
+		data = event
 
 	case *events.MediaRetry:
 		evt := event.(*events.MediaRetry)
@@ -112,6 +127,37 @@ func (gows *GoWS) reissueEvent(event interface{}) {
 	}
 
 	gows.emitEvent(data)
+}
+
+// enrichAltJIDs fills the phone number alt JIDs from the LID store for LID-addressed messages
+// whose stanza didn't carry the sender_pn / peer_recipient_pn attributes.
+func (gows *GoWS) enrichAltJIDs(msg *events.Message) {
+	if gows.Client == nil || gows.Store == nil || gows.Store.LIDs == nil {
+		return
+	}
+	info := &msg.Info
+	// Incoming DM or group message from a @lid sender
+	if info.Sender.Server == types.HiddenUserServer && info.SenderAlt.IsEmpty() {
+		pn, err := gows.Store.LIDs.GetPNForLID(gows.Context, info.Sender)
+		if err != nil {
+			gows.Log.Warnf("Failed to get PN for sender %v: %v", info.Sender, err)
+		} else if !pn.IsEmpty() && !gows.validLIDPNPair(info.Sender, pn) {
+			gows.Log.Warnf("Ignoring suspicious stored LID-PN mapping %v => %v", info.Sender, pn)
+		} else if !pn.IsEmpty() {
+			info.SenderAlt = pn
+		}
+	}
+	// Own message in a @lid-addressed DM
+	if info.IsFromMe && info.Chat.Server == types.HiddenUserServer && info.RecipientAlt.IsEmpty() {
+		pn, err := gows.Store.LIDs.GetPNForLID(gows.Context, info.Chat)
+		if err != nil {
+			gows.Log.Warnf("Failed to get PN for chat %v: %v", info.Chat, err)
+		} else if !pn.IsEmpty() && !gows.validLIDPNPair(info.Chat, pn) {
+			gows.Log.Warnf("Ignoring suspicious stored LID-PN mapping %v => %v", info.Chat, pn)
+		} else if !pn.IsEmpty() {
+			info.RecipientAlt = pn
+		}
+	}
 }
 
 func (gows *GoWS) handleEvent(event interface{}) {
@@ -186,6 +232,10 @@ func (gows *GoWS) ensureNCTSalt() {
 // re-emits it as *events.NotifyAccountReachoutTimelock, so the API side handles
 // the fetched state exactly like the push notification.
 func (gows *GoWS) fetchReachoutTimelock() {
+	gows.timelockFetchMu.Lock()
+	gows.timelockFetchLast = time.Now()
+	gows.timelockFetchMu.Unlock()
+
 	ctx, cancel := context.WithTimeout(gows.Context, 30*time.Second)
 	defer cancel()
 
@@ -197,6 +247,19 @@ func (gows *GoWS) fetchReachoutTimelock() {
 	gows.emitEvent(result)
 }
 
+// fetchReachoutTimelockThrottled fetches the timelock only if the last fetch is
+// older than timelockMinFetchInterval. Used by the 463 send nack, which fires
+// once per message during a bulk send.
+func (gows *GoWS) fetchReachoutTimelockThrottled() {
+	gows.timelockFetchMu.Lock()
+	recent := time.Since(gows.timelockFetchLast) < timelockMinFetchInterval
+	gows.timelockFetchMu.Unlock()
+	if recent {
+		return
+	}
+	gows.fetchReachoutTimelock()
+}
+
 // Message capping re-fetch cadence.
 const (
 	// cappingMinFetchInterval throttles the send-driven and periodic fetches so
@@ -206,6 +269,9 @@ const (
 	// Web's fetch TTL (wa_individual_new_chat_msg_capping_fetch_ttl_seconds, default 3600s) so we
 	// do not query more often than a real client would.
 	cappingPollInterval = time.Hour
+	// timelockMinFetchInterval throttles the 463-driven timelock re-fetches so a bulk send
+	// that nacks many messages at once does not query the server per message.
+	timelockMinFetchInterval = 60 * time.Second
 )
 
 // fetchMessageCapping fetches the current new-chat message capping state and
@@ -335,6 +401,7 @@ func BuildSession(
 		_ = container.Close()
 		return nil, err
 	}
+	ApplyDeviceStorageConfig(deviceStore, storageCfg)
 
 	// Configure the client
 	client := whatsmeow.NewClient(deviceStore, log.Sub("Client"))
@@ -363,9 +430,8 @@ func BuildSession(
 		sync.Mutex{},
 		time.Time{},
 		sync.Once{},
-	}
-	if storageCfg == (StorageConfig{}) {
-		storageCfg = DefaultStorageConfig()
+		sync.Mutex{},
+		time.Time{},
 	}
 	gows.Storage = BuildStorage(container, gows, storageCfg)
 	gows.storageEventHandler = &StorageEventHandler{
@@ -435,9 +501,17 @@ func (gows *GoWS) SendMessage(ctx context.Context, to types.JID, msg *waE2E.Mess
 			// to (it marks the account CAPPED on the spot; we re-fetch to get the real numbers).
 			// 463 is NackCallerReachoutTimelocked - the timelock sibling of the capping, so the
 			// quota state likely changed together with it.
-			if errors.Is(err, whatsmeow.ErrServerReturnedError) &&
-				(strings.HasSuffix(err.Error(), " 475") || strings.HasSuffix(err.Error(), " 463")) {
-				go gows.fetchMessageCapping()
+			if errors.Is(err, whatsmeow.ErrServerReturnedError) {
+				is475 := strings.HasSuffix(err.Error(), " 475")
+				is463 := strings.HasSuffix(err.Error(), " 463")
+				if is475 || is463 {
+					go gows.fetchMessageCapping()
+				}
+				if is463 {
+					// Refresh the timelock state too, so the API side learns the enforcement
+					// even when WhatsApp applied it without a push notification.
+					go gows.fetchReachoutTimelockThrottled()
+				}
 			}
 			return nil, err
 		}

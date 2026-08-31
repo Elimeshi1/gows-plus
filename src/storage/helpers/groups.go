@@ -34,6 +34,9 @@ func updateGroupParams(group *types.GroupInfo, update *events.GroupInfo) error {
 	if update.Ephemeral != nil {
 		group.GroupEphemeral = *update.Ephemeral
 	}
+	if update.MembershipApprovalMode != nil {
+		group.GroupMembershipApprovalMode = *update.MembershipApprovalMode
+	}
 	return nil
 }
 

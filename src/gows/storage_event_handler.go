@@ -164,6 +164,16 @@ func (st *StorageEventHandler) handleEvent(event interface{}) {
 			return
 		}
 		st.handleReceipt(receipt)
+	case *events.UndecryptableMessage:
+		msg := event.(*events.UndecryptableMessage)
+		if st.shouldIgnoreJID(msg.Info.Chat) {
+			return
+		}
+		st.log.Errorf(
+			"Undecryptable message %s in %s from %s (unavailable: %v, type: %q, failMode: %q) - content lost unless the sender answers the retry receipt",
+			msg.Info.ID, msg.Info.Chat, msg.Info.Sender,
+			msg.IsUnavailable, msg.UnavailableType, msg.DecryptFailMode,
+		)
 	case *events.HistorySync:
 		st.handleHistorySync(event.(*events.HistorySync))
 	// Groups

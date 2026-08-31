@@ -301,3 +301,69 @@ func (s *Server) UpdateGroupParticipants(ctx context.Context, req *__.UpdatePart
 	}
 	return toJsonList(result)
 }
+
+func (s *Server) SetGroupJoinApprovalMode(ctx context.Context, req *__.JidBoolRequest) (*__.Empty, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	jid, err := types.ParseJID(req.GetJid())
+	if err != nil {
+		return nil, err
+	}
+	err = cli.SetGroupJoinApprovalMode(ctx, jid, req.GetValue())
+	if err != nil {
+		return nil, err
+	}
+	return &__.Empty{}, nil
+}
+
+func (s *Server) GetGroupRequestParticipants(ctx context.Context, req *__.JidRequest) (*__.JsonList, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	jid, err := types.ParseJID(req.GetJid())
+	if err != nil {
+		return nil, err
+	}
+	result, err := cli.GetGroupRequestParticipants(ctx, jid)
+	if err != nil {
+		return nil, err
+	}
+	return toJsonList(result)
+}
+
+func (s *Server) UpdateGroupRequestParticipants(ctx context.Context, req *__.UpdateRequestParticipantsRequest) (*__.JsonList, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	jid, err := types.ParseJID(req.GetJid())
+	if err != nil {
+		return nil, err
+	}
+	participants := make([]types.JID, 0, len(req.GetParticipants()))
+	for ind, p := range req.GetParticipants() {
+		jid, err := types.ParseJID(p)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse JID at index %d (%s): %w", ind, p, err)
+		}
+		participants = append(participants, jid)
+	}
+
+	var action whatsmeow.ParticipantRequestChange
+	switch req.Action {
+	case __.ParticipantRequestAction_APPROVE:
+		action = whatsmeow.ParticipantChangeApprove
+	case __.ParticipantRequestAction_REJECT:
+		action = whatsmeow.ParticipantChangeReject
+	default:
+		return nil, fmt.Errorf("unknown action: %v", req.Action)
+	}
+	result, err := cli.UpdateGroupRequestParticipants(ctx, jid, participants, action)
+	if err != nil {
+		return nil, err
+	}
+	return toJsonList(result)
+}
