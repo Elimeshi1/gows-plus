@@ -164,3 +164,39 @@ func TestHandleHistorySyncWithoutData(t *testing.T) {
 	// Must not dereference a nil event.Data
 	st.handleHistorySync(&events.HistorySync{})
 }
+
+// statusReceipt builds a status@broadcast receipt as whatsmeow would deliver it.
+func statusReceipt(sender types.JID, fromMe bool, messageSender types.JID) *events.Receipt {
+	return &events.Receipt{
+		MessageSource: types.MessageSource{
+			Chat:     types.StatusBroadcastJID,
+			Sender:   sender,
+			IsFromMe: fromMe,
+			IsGroup:  true,
+		},
+		MessageIDs:    []types.MessageID{"3EB0STATUS"},
+		Type:          types.ReceiptTypeDelivered,
+		MessageSender: messageSender,
+	}
+}
+
+func TestIsOwnStatusReceipt(t *testing.T) {
+	st, _, _ := newTestHandler()
+	viewer := types.NewJID("9492079063155", types.HiddenUserServer)
+	stranger := types.NewJID("111222333444555", types.HiddenUserServer)
+
+	// Somebody watched a status of ours: whatsmeow leaves MessageSender empty
+	// because the author is us.
+	if !st.isOwnStatusReceipt(statusReceipt(viewer, false, types.EmptyJID)) {
+		t.Fatal("a viewer's receipt on our own status must be counted")
+	}
+	// We watched somebody else's status. The receipt is ours, and counting it
+	// would file a stranger's status under our own numbers.
+	if st.isOwnStatusReceipt(statusReceipt(viewer, true, stranger)) {
+		t.Fatal("our own view of another status must not be counted")
+	}
+	// Same thing without the IsFromMe flag: the named author is not us.
+	if st.isOwnStatusReceipt(statusReceipt(viewer, false, stranger)) {
+		t.Fatal("a receipt about somebody else's status must not be counted")
+	}
+}

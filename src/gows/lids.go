@@ -7,6 +7,21 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
+// ownUsers returns the user parts of this account's own JIDs, phone number and
+// @lid alike. A session that has never been paired has neither, and returns none.
+func (gows *GoWS) ownUsers() []string {
+	if gows.Client == nil || gows.Store == nil {
+		return nil
+	}
+	users := make([]string, 0, 2)
+	for _, own := range []types.JID{gows.Store.GetJID(), gows.Store.GetLID()} {
+		if !own.IsEmpty() {
+			users = append(users, own.User)
+		}
+	}
+	return users
+}
+
 // ResolvePNByLid resolves the phone number behind a LID - first from the local store,
 // then, if unknown, via a server usync query. Returns an empty JID when the mapping is unknown.
 func (gows *GoWS) ResolvePNByLid(ctx context.Context, lid types.JID) (types.JID, error) {

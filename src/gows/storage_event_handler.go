@@ -61,6 +61,39 @@ func isStatusBroadcast(jid types.JID) bool {
 		jid.User == types.StatusBroadcastJID.User
 }
 
+// isOwnStatusReceipt reports whether a status@broadcast receipt is about a status
+// we posted. Viewing somebody else's status raises a receipt on the very same
+// chat, and storing those would fill the table with rows about statuses whose
+// reach is none of our business.
+func (st *StorageEventHandler) isOwnStatusReceipt(event *events.Receipt) bool {
+	// A receipt we sent ourselves is our own view of someone else's status. It is
+	// also how a linked device reports that we opened our own, which is not a
+	// viewer either.
+	if event.IsFromMe {
+		return false
+	}
+	// MessageSender carries the author of the status being acknowledged, and
+	// whatsmeow leaves it empty when that author is us.
+	if event.MessageSender.IsEmpty() {
+		return true
+	}
+	return st.isOwnJID(event.MessageSender)
+}
+
+// isOwnJID reports whether a JID addresses this account, under either its phone
+// number or its @lid.
+func (st *StorageEventHandler) isOwnJID(jid types.JID) bool {
+	if jid.IsEmpty() || st.gows == nil || st.gows.Store == nil {
+		return false
+	}
+	for _, own := range []types.JID{st.gows.Store.GetJID(), st.gows.Store.GetLID()} {
+		if !own.IsEmpty() && own.User == jid.User {
+			return true
+		}
+	}
+	return false
+}
+
 // keepOwnStatus reports whether an event must be kept even when its JID would
 // otherwise be ignored: our own (fromMe) status@broadcast messages. This lets
 // statuses we sent be stored and read back from the DB later even when statuses
@@ -287,7 +320,7 @@ func (st *StorageEventHandler) handleReceipt(event *events.Receipt) {
 	// writes straight to the database, so a slow gRPC listener can no longer cost
 	// us a view, and it also covers the receipt types the status switch below
 	// deliberately ignores (read-self).
-	if isStatusBroadcast(event.Chat) {
+	if isStatusBroadcast(event.Chat) && st.isOwnStatusReceipt(event) {
 		st.statusAcks.Record(event)
 	}
 

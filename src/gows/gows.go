@@ -445,6 +445,7 @@ func BuildSession(
 		ignoreJids: ignoreJids,
 		statusAcks: NewStatusAckWriter(
 			gows.Storage.StatusAcks,
+			gows.ownUsers,
 			gows.Log.Sub("StatusAck"),
 		),
 	}

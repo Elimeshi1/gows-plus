@@ -34,6 +34,11 @@ type StatusAckStorage interface {
 	// rewrote, which is more than the number of rows that disappear: a person
 	// seen only from a linked device gets rewritten without being a duplicate.
 	MergeDeviceParticipants() (int, error)
+	// DeleteSelfViews drops rows whose viewer is the account itself, given the
+	// user parts of its own JIDs. Those rows come from viewing somebody else's
+	// status, which says nothing about the reach of our own. Returns how many
+	// rows it removed.
+	DeleteSelfViews(users []string) (int, error)
 }
 
 type MessageStorage interface {

@@ -244,6 +244,46 @@ func (s *SqlStatusAckStore) MergeDeviceParticipants() (int, error) {
 	return len(rows), nil
 }
 
+// DeleteSelfViews drops every row whose viewer is the account itself.
+//
+// Viewing somebody else's status produces a receipt on status@broadcast just like
+// a viewer of ours does, and those used to be stored as well. They are always
+// keyed by our own JID, because WhatsApp only forwards a status author the
+// receipts for their own posts, so matching on the participant is enough to tell
+// the two apart after the fact. users holds the bare user parts of the account's
+// phone-number and @lid JIDs.
+func (s *SqlStatusAckStore) DeleteSelfViews(users []string) (int, error) {
+	own := sq.Or{}
+	for _, user := range users {
+		if user == "" {
+			continue
+		}
+		// Two patterns per JID: the device-less form we write today, and the
+		// user:device form that rows written before the merge still carry.
+		own = append(own,
+			sq.Like{"participant": user + "@%"},
+			sq.Like{"participant": user + ":%@%"},
+		)
+	}
+	if len(own) == 0 {
+		return 0, nil
+	}
+
+	query, args, err := sq.Delete(StatusAcksTable).Where(own).ToSql()
+	if err != nil {
+		return 0, err
+	}
+	result, err := s.db.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(deleted), nil
+}
+
 // DeleteBefore drops rows last updated before t. WhatsApp statuses expire after
 // 24h, so anything older than the retention window is dead weight.
 func (s *SqlStatusAckStore) DeleteBefore(t time.Time) error {

@@ -39,11 +39,17 @@ type StatusAckWriter struct {
 	stopping chan struct{}
 	done     chan struct{}
 	stopOnce sync.Once
+	// ownUsers reports the user parts of this account's own JIDs. It is a
+	// function because a session that has never been paired has none yet.
+	ownUsers func() []string
+	// selfViewsCleaned records that the one-time cleanup below has run against a
+	// paired session, so it stops being retried.
+	selfViewsCleaned bool
 }
 
 // NewStatusAckWriter starts the writer. A nil storage disables the counting and
 // returns nil, which every method below tolerates.
-func NewStatusAckWriter(st storage.StatusAckStorage, log waLog.Logger) *StatusAckWriter {
+func NewStatusAckWriter(st storage.StatusAckStorage, ownUsers func() []string, log waLog.Logger) *StatusAckWriter {
 	if st == nil {
 		return nil
 	}
@@ -53,9 +59,11 @@ func NewStatusAckWriter(st storage.StatusAckStorage, log waLog.Logger) *StatusAc
 		queue:    make(chan storage.StatusAckRecord, statusAckQueueSize),
 		stopping: make(chan struct{}),
 		done:     make(chan struct{}),
+		ownUsers: ownUsers,
 	}
 	writer.prune()
 	writer.mergeDeviceParticipants()
+	writer.deleteSelfViews()
 	go writer.run()
 	return writer
 }
@@ -126,6 +134,7 @@ func (w *StatusAckWriter) run() {
 		case <-pruneTicker.C:
 			batch = w.flush(batch)
 			w.prune()
+			w.deleteSelfViews()
 		case <-w.stopping:
 			w.drain(batch)
 			return
@@ -170,6 +179,29 @@ func (w *StatusAckWriter) mergeDeviceParticipants() {
 	}
 	if merged > 0 {
 		w.log.Infof("Merged %d per-device status ack rows into one row per viewer", merged)
+	}
+}
+
+// deleteSelfViews clears rows left by an older build that also stored our own
+// views of other people's statuses. It runs once against a paired session; until
+// the session has a JID there is nothing to match on, so it is retried on the
+// prune tick.
+func (w *StatusAckWriter) deleteSelfViews() {
+	if w.selfViewsCleaned || w.ownUsers == nil {
+		return
+	}
+	users := w.ownUsers()
+	if len(users) == 0 {
+		return
+	}
+	deleted, err := w.storage.DeleteSelfViews(users)
+	if err != nil {
+		w.log.Warnf("Error clearing own status views: %v", err)
+		return
+	}
+	w.selfViewsCleaned = true
+	if deleted > 0 {
+		w.log.Infof("Removed %d status ack rows left by our own views of other people's statuses", deleted)
 	}
 }
 
