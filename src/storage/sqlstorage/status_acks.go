@@ -1,16 +1,32 @@
 package sqlstorage
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/devlikeapro/gows/storage"
 	"github.com/jmoiron/sqlx"
+	"go.mau.fi/whatsmeow/types"
 )
 
-// StatusAcksTable holds one row per (status message, viewer) pair.
+// StatusAcksTable holds one row per (status message, viewer).
 const StatusAcksTable = "gows_status_acks"
+
+// lidMapTable is whatsmeow's own @lid to phone number mapping. Joining against it
+// lets us report viewers as phone numbers instead of opaque @lid identifiers,
+// without asking the server for anything.
+const lidMapTable = "whatsmeow_lid_map"
+
+// deviceParticipantPattern matches participants that still carry a device suffix
+// (user:device@server), which is what rows written before the ToNonAD fix look like.
+const deviceParticipantPattern = "%:%"
+
+// maxUpsertRows caps how many rows go into one INSERT. Every row binds four
+// parameters and SQLite refuses a statement with more than 32766 of them, which a
+// one-shot merge of a busy session's backlog comfortably exceeds.
+const maxUpsertRows = 500
 
 type SqlStatusAckStore struct {
 	db *sqlx.DB
@@ -22,11 +38,37 @@ func (gc *GContainer) NewStatusAckStorage() *SqlStatusAckStore {
 	return &SqlStatusAckStore{db: gc.db}
 }
 
+// execer is the bit of sqlx both *sqlx.DB and *sqlx.Tx satisfy, so the upsert can
+// run standalone or inside the merge transaction.
+type execer interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+}
+
 // UpsertMany writes a whole batch in one statement, keeping the highest ack ever
-// seen for a pair. Records addressing the same pair are collapsed first:
-// ON CONFLICT DO UPDATE refuses to touch the same row twice in one statement.
+// seen for a pair.
 func (s *SqlStatusAckStore) UpsertMany(records []storage.StatusAckRecord) error {
+	return upsertStatusAcks(s.db, records)
+}
+
+// upsertStatusAcks collapses records addressing the same pair before writing:
+// ON CONFLICT DO UPDATE refuses to touch the same row twice in one statement.
+// The write is split into statements small enough for the parameter limit.
+func upsertStatusAcks(db execer, records []storage.StatusAckRecord) error {
 	records = dedupeStatusAcks(records)
+	for start := 0; start < len(records); start += maxUpsertRows {
+		end := start + maxUpsertRows
+		if end > len(records) {
+			end = len(records)
+		}
+		if err := upsertStatusAckChunk(db, records[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// upsertStatusAckChunk writes one statement's worth of already deduped records.
+func upsertStatusAckChunk(db execer, records []storage.StatusAckRecord) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -52,13 +94,19 @@ func (s *SqlStatusAckStore) UpsertMany(records []storage.StatusAckRecord) error 
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(query, args...)
+	_, err = db.Exec(query, args...)
 	return err
 }
 
 // GetSummary counts the viewers of one status. Without participants the counting
 // happens in SQL, so the thousands of rows a popular status collects never reach
 // Go at all.
+//
+// The participant list is reported as phone numbers wherever the session already
+// knows the @lid behind them. The mapping is read from whatsmeow's local table,
+// never from the server: a status can reach thousands of contacts, and asking
+// WhatsApp to resolve each unknown one would be a request storm. Viewers we
+// cannot map are returned as their @lid.
 func (s *SqlStatusAckStore) GetSummary(messageID string, participants bool) (*storage.StatusAckSummary, error) {
 	summary := &storage.StatusAckSummary{MessageID: messageID}
 	if messageID == "" {
@@ -88,31 +136,112 @@ func (s *SqlStatusAckStore) GetSummary(messageID string, participants bool) (*st
 		return summary, nil
 	}
 
-	query, args, err := sq.Select("participant", "ack").
-		From(StatusAcksTable).
-		Where(sq.Eq{"message_id": messageID}).
+	// substr(participant, 1, length(participant) - 4) drops the "@lid" suffix, which
+	// is how the mapping table keys its rows. Both halves are plain SQL92 so this
+	// works on SQLite and Postgres alike.
+	join := fmt.Sprintf(
+		"%s m ON a.participant LIKE '%%@%s' AND m.lid = substr(a.participant, 1, length(a.participant) - 4)",
+		lidMapTable, types.HiddenUserServer,
+	)
+	query, args, err := sq.Select("a.participant", "a.ack", "m.pn").
+		From(StatusAcksTable + " a").
+		LeftJoin(join).
+		Where(sq.Eq{"a.message_id": messageID}).
 		ToSql()
 	if err != nil {
 		return nil, err
 	}
 	rows := []struct {
-		Participant string `db:"participant"`
-		Ack         int    `db:"ack"`
+		Participant string         `db:"participant"`
+		Ack         int            `db:"ack"`
+		PN          sql.NullString `db:"pn"`
 	}{}
 	if err = s.db.Select(&rows, query, args...); err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
+		participant := row.Participant
+		if row.PN.Valid && row.PN.String != "" {
+			participant = row.PN.String + "@" + types.DefaultUserServer
+		}
 		if row.Ack >= storage.StatusAckDelivered {
 			summary.Received++
-			summary.ReceivedParticipants = append(summary.ReceivedParticipants, row.Participant)
+			summary.ReceivedParticipants = append(summary.ReceivedParticipants, participant)
 		}
 		if row.Ack >= storage.StatusAckRead {
 			summary.Read++
-			summary.ReadParticipants = append(summary.ReadParticipants, row.Participant)
+			summary.ReadParticipants = append(summary.ReadParticipants, participant)
 		}
 	}
 	return summary, nil
+}
+
+// MergeDeviceParticipants folds rows whose participant still carries a device
+// suffix into the device-less participant, keeping the highest ack.
+//
+// A contact with WhatsApp linked on a desktop sends a delivery receipt from every
+// device, and each used to be stored as its own participant, so one person counted
+// two or three times. Writes are device-less now; this repairs what was already
+// stored. It returns how many per-device rows it rewrote - more than the number of
+// rows that disappear, since a person seen only from a linked device is rewritten
+// without having been a duplicate - and is a no-op once there is nothing left.
+func (s *SqlStatusAckStore) MergeDeviceParticipants() (int, error) {
+	query, args, err := sq.Select("message_id", "participant", "ack", "updated_at").
+		From(StatusAcksTable).
+		Where(sq.Like{"participant": deviceParticipantPattern}).
+		ToSql()
+	if err != nil {
+		return 0, err
+	}
+	rows := []struct {
+		MessageID   string `db:"message_id"`
+		Participant string `db:"participant"`
+		Ack         int    `db:"ack"`
+		UpdatedAt   int64  `db:"updated_at"`
+	}{}
+	if err = s.db.Select(&rows, query, args...); err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, nil
+	}
+
+	merged := make([]storage.StatusAckRecord, 0, len(rows))
+	for _, row := range rows {
+		jid, parseErr := types.ParseJID(row.Participant)
+		if parseErr != nil {
+			continue
+		}
+		merged = append(merged, storage.StatusAckRecord{
+			MessageID:   row.MessageID,
+			Participant: jid.ToNonAD().String(),
+			Ack:         row.Ack,
+			UpdatedAt:   time.UnixMilli(row.UpdatedAt),
+		})
+	}
+
+	tx, err := s.db.Beginx()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once the commit below succeeded
+
+	if err = upsertStatusAcks(tx, merged); err != nil {
+		return 0, err
+	}
+	deleteQuery, deleteArgs, err := sq.Delete(StatusAcksTable).
+		Where(sq.Like{"participant": deviceParticipantPattern}).
+		ToSql()
+	if err != nil {
+		return 0, err
+	}
+	if _, err = tx.Exec(deleteQuery, deleteArgs...); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(rows), nil
 }
 
 // DeleteBefore drops rows last updated before t. WhatsApp statuses expire after

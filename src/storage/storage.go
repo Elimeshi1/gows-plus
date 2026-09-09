@@ -29,6 +29,11 @@ type StatusAckStorage interface {
 	GetSummary(messageID string, participants bool) (*StatusAckSummary, error)
 	// DeleteBefore drops rows last updated before the given time.
 	DeleteBefore(t time.Time) error
+	// MergeDeviceParticipants folds rows stored per device into one row per
+	// person, keeping the highest ack. Returns how many per-device rows it
+	// rewrote, which is more than the number of rows that disappear: a person
+	// seen only from a linked device gets rewritten without being a duplicate.
+	MergeDeviceParticipants() (int, error)
 }
 
 type MessageStorage interface {

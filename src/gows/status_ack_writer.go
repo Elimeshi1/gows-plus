@@ -55,6 +55,7 @@ func NewStatusAckWriter(st storage.StatusAckStorage, log waLog.Logger) *StatusAc
 		done:     make(chan struct{}),
 	}
 	writer.prune()
+	writer.mergeDeviceParticipants()
 	go writer.run()
 	return writer
 }
@@ -72,7 +73,9 @@ func (w *StatusAckWriter) Record(receipt *events.Receipt) {
 	if receipt.Sender.IsEmpty() {
 		return
 	}
-	participant := receipt.Sender.String()
+	// ToNonAD drops the device: a contact with WhatsApp linked on a desktop sends
+	// a receipt from every device, and we want one row per person, not per device.
+	participant := receipt.Sender.ToNonAD().String()
 	now := time.Now()
 	for _, id := range receipt.MessageIDs {
 		if id == "" {
@@ -155,6 +158,19 @@ func (w *StatusAckWriter) flush(batch []storage.StatusAckRecord) []storage.Statu
 		w.log.Errorf("Error writing %d status acks: %v", len(batch), err)
 	}
 	return batch[:0]
+}
+
+// mergeDeviceParticipants repairs rows written before receipts were keyed by
+// person instead of by device. It runs once at startup and finds nothing after.
+func (w *StatusAckWriter) mergeDeviceParticipants() {
+	merged, err := w.storage.MergeDeviceParticipants()
+	if err != nil {
+		w.log.Warnf("Error merging per-device status acks: %v", err)
+		return
+	}
+	if merged > 0 {
+		w.log.Infof("Merged %d per-device status ack rows into one row per viewer", merged)
+	}
 }
 
 func (w *StatusAckWriter) prune() {
