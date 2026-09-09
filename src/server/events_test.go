@@ -6,6 +6,7 @@ import (
 
 	gowsLog "github.com/devlikeapro/gows/log"
 	"github.com/google/uuid"
+	"go.mau.fi/whatsmeow/types/events"
 )
 
 func newTestServer() *Server {
@@ -26,7 +27,7 @@ func isPoisoned(listener *eventListener) bool {
 
 func TestSendEventToAllListenersPoisonsStuckListener(t *testing.T) {
 	s := newTestServer()
-	listener := s.addListener("session", uuid.New())
+	listener := s.addListener("session", uuid.New(), nil)
 
 	// Nobody reads the events, so we fill the buffer and then drop
 	for i := 0; i < eventListenerBuffer+maxConsecutiveDrops; i++ {
@@ -40,7 +41,7 @@ func TestSendEventToAllListenersPoisonsStuckListener(t *testing.T) {
 
 func TestSendEventToAllListenersResetsDropsOnDelivery(t *testing.T) {
 	s := newTestServer()
-	listener := s.addListener("session", uuid.New())
+	listener := s.addListener("session", uuid.New(), nil)
 
 	// Fill the buffer, then alternate: drop a few, read one, drop a few...
 	for i := 0; i < eventListenerBuffer; i++ {
@@ -61,7 +62,7 @@ func TestSendEventToAllListenersResetsDropsOnDelivery(t *testing.T) {
 
 func TestSendEventToAllListenersDoesNotBlockOnPoisonedListener(t *testing.T) {
 	s := newTestServer()
-	listener := s.addListener("session", uuid.New())
+	listener := s.addListener("session", uuid.New(), nil)
 	listener.poison()
 
 	done := make(chan struct{})
@@ -74,5 +75,23 @@ func TestSendEventToAllListenersDoesNotBlockOnPoisonedListener(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("SendEventToAllListeners blocked on a poisoned listener")
+	}
+}
+
+func TestSendEventToAllListenersSkipsExcludedTypes(t *testing.T) {
+	s := newTestServer()
+	exclude := map[string]struct{}{"events.HistorySync": {}}
+	listener := s.addListener("session", uuid.New(), exclude)
+
+	// The excluded type must not take a buffer slot: those events are the bulky
+	// ones, and holding them would push out events the listener actually wants.
+	s.SendEventToAllListeners("session", &events.HistorySync{})
+	s.SendEventToAllListeners("session", &events.Receipt{})
+
+	if len(listener.events) != 1 {
+		t.Fatalf("expected only the wanted event to be buffered, got %d", len(listener.events))
+	}
+	if _, ok := (<-listener.events).(*events.Receipt); !ok {
+		t.Fatal("expected the buffered event to be the receipt")
 	}
 }

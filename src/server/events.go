@@ -17,8 +17,9 @@ import (
 // eventListenerBuffer is how many events we keep for a listener that doesn't read them fast enough.
 // Sized to absorb a whole status@broadcast fan-out: thousands of recipients, each
 // sending a delivery receipt and later a read receipt, arrive as one burst that a
-// 1000-event buffer could not hold.
-const eventListenerBuffer = 50_000
+// 1000-event buffer could not hold. The largest burst we have measured is ~3.5k
+// events, so this is roughly three times the observed worst case.
+const eventListenerBuffer = 10_000
 
 // maxConsecutiveDrops is how many events in a row we may drop before we consider
 // the listener dead and ask the client to reconnect. It stays far below the
@@ -28,17 +29,37 @@ const maxConsecutiveDrops = 1000
 
 type eventListener struct {
 	events chan interface{}
+	// exclude holds the event types this listener asked not to receive. Filtering
+	// on the way in rather than on the way out matters: the excluded types are
+	// the bulky ones (HistorySync, AppState), and buffering them only to throw
+	// them away later would both pin their memory and push out events we want.
+	exclude map[string]struct{}
 	// closed once the listener is considered dead, StreamEvents watches it
 	poisoned   chan struct{}
 	poisonOnce sync.Once
 	drops      atomic.Int64
 }
 
-func newEventListener() *eventListener {
+func newEventListener(exclude map[string]struct{}) *eventListener {
 	return &eventListener{
 		events:   make(chan interface{}, eventListenerBuffer),
+		exclude:  exclude,
 		poisoned: make(chan struct{}),
 	}
+}
+
+// eventTypeName is the type name events are excluded by, e.g. "events.Receipt".
+func eventTypeName(event interface{}) string {
+	return strings.TrimPrefix(reflect.TypeOf(event).String(), "*")
+}
+
+// excluded reports whether this listener asked not to receive the event.
+func (l *eventListener) excluded(event interface{}) bool {
+	if len(l.exclude) == 0 {
+		return false
+	}
+	_, found := l.exclude[eventTypeName(event)]
+	return found
 }
 
 // poison marks the listener as dead. It touches neither the listeners map nor
@@ -69,12 +90,12 @@ func (s *Server) safeMarshal(v interface{}) (result string) {
 func (s *Server) StreamEvents(req *__.StreamEventsRequest, stream grpc.ServerStreamingServer[__.EventJson]) error {
 	sessionName := req.GetSession().GetId()
 	streamId := uuid.New()
-	listener := s.addListener(sessionName, streamId)
-	defer s.removeListener(sessionName, streamId)
 	exclude := make(map[string]struct{}, len(req.GetExclude()))
 	for _, eventType := range req.GetExclude() {
 		exclude[eventType] = struct{}{}
 	}
+	listener := s.addListener(sessionName, streamId, exclude)
+	defer s.removeListener(sessionName, streamId)
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -93,12 +114,9 @@ func (s *Server) StreamEvents(req *__.StreamEventsRequest, stream grpc.ServerStr
 			if event == nil {
 				continue
 			}
-			// Remove * at the start if it's *
-			eventType := reflect.TypeOf(event).String()
-			eventType = strings.TrimPrefix(eventType, "*")
-			if _, ok := exclude[eventType]; ok {
-				continue
-			}
+			// Excluded types never make it into the buffer, so anything we read
+			// here is wanted.
+			eventType := eventTypeName(event)
 
 			jsonString := s.safeMarshal(event)
 			if jsonString == "" {
@@ -124,6 +142,9 @@ func (s *Server) SendEventToAllListeners(session string, event interface{}) {
 
 	sessionListeners := s.listeners[session]
 	for id, listener := range sessionListeners {
+		if listener.excluded(event) {
+			continue
+		}
 		// Drop the event if the listener buffer is full to avoid blocking and goroutine leaks.
 		select {
 		case listener.events <- event:
@@ -142,11 +163,11 @@ func (s *Server) SendEventToAllListeners(session string, event interface{}) {
 	}
 }
 
-func (s *Server) addListener(session string, id uuid.UUID) *eventListener {
+func (s *Server) addListener(session string, id uuid.UUID, exclude map[string]struct{}) *eventListener {
 	s.listenersLock.Lock()
 	defer s.listenersLock.Unlock()
 
-	listener := newEventListener()
+	listener := newEventListener(exclude)
 	sessionListeners, ok := s.listeners[session]
 	if !ok {
 		sessionListeners = map[uuid.UUID]*eventListener{}

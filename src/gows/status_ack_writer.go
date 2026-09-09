@@ -21,9 +21,10 @@ const (
 	// burst of receipts, and batching turns it into a handful of transactions.
 	statusAckFlushSize     = 500
 	statusAckFlushInterval = 200 * time.Millisecond
-	// statusAckRetention - WhatsApp statuses expire after 24h, so older acks are
-	// meaningless. Pruning keeps the table small even for huge contact lists.
-	statusAckRetention     = 7 * 24 * time.Hour
+	// statusAckRetention - how far back the counters stay answerable. A status
+	// itself expires after 24h, but the numbers are still worth reading long
+	// after that, so keep a month and prune the rest.
+	statusAckRetention     = 30 * 24 * time.Hour
 	statusAckPruneInterval = 6 * time.Hour
 )
 
