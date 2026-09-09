@@ -68,4 +68,4 @@ require (
 // PreDecryptIgnore hook); track the Elimeshi1 fork, which is devlikeapro's
 // 1ba57cc32ea6 pin (the one upstream/dev requires) plus those patches.
 // goscraper is left on devlikeapro (rarely changes).
-replace go.mau.fi/whatsmeow => github.com/Elimeshi1/whatsmeow v0.0.0-20260831083752-a8924edacd99
+replace go.mau.fi/whatsmeow => github.com/Elimeshi1/whatsmeow v0.0.0-20260909171326-ddbb204716e6
