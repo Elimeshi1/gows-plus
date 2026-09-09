@@ -359,6 +359,10 @@ func (gows *GoWS) Stop() {
 	if gows.mediaRetryEvents != nil {
 		gows.mediaRetryEvents.Stop()
 	}
+	// Commit the queued status acks while the database is still open.
+	if gows.storageEventHandler != nil {
+		gows.storageEventHandler.statusAcks.Stop()
+	}
 	if gows.container != nil {
 		err := gows.container.Close()
 		if err != nil {
@@ -439,6 +443,10 @@ func BuildSession(
 		log:        gows.Log.Sub("Storage"),
 		storage:    gows.Storage,
 		ignoreJids: ignoreJids,
+		statusAcks: NewStatusAckWriter(
+			gows.Storage.StatusAcks,
+			gows.Log.Sub("StatusAck"),
+		),
 	}
 	// [WAHA] Enforce the Ignore config at the crypto layer too: skip decryption and
 	// all related store writes (LID mappings, push names, identity/session churn)

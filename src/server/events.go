@@ -15,11 +15,16 @@ import (
 )
 
 // eventListenerBuffer is how many events we keep for a listener that doesn't read them fast enough.
-const eventListenerBuffer = 1000
+// Sized to absorb a whole status@broadcast fan-out: thousands of recipients, each
+// sending a delivery receipt and later a read receipt, arrive as one burst that a
+// 1000-event buffer could not hold.
+const eventListenerBuffer = 50_000
 
 // maxConsecutiveDrops is how many events in a row we may drop before we consider
-// the listener dead and ask the client to reconnect.
-const maxConsecutiveDrops = eventListenerBuffer
+// the listener dead and ask the client to reconnect. It stays far below the
+// buffer size: a listener that misses that many in a row is not coming back on
+// its own, and waiting for a full buffer's worth would only lose more.
+const maxConsecutiveDrops = 1000
 
 type eventListener struct {
 	events chan interface{}

@@ -26,6 +26,35 @@ type StoredMessage struct {
 	Status *Status
 }
 
+// Ack levels tracked for status@broadcast receipts. They mirror the WAHA
+// WAMessageAck values the API exposes, not the Status enum above.
+const (
+	// StatusAckDelivered - the status reached the viewer's device.
+	StatusAckDelivered = 2
+	// StatusAckRead - the viewer opened (or played) the status.
+	StatusAckRead = 3
+)
+
+// StatusAckRecord is a single (status, viewer, ack) observation.
+type StatusAckRecord struct {
+	MessageID   string
+	Participant string
+	Ack         int
+	UpdatedAt   time.Time
+}
+
+// StatusAckSummary aggregates every viewer of one status we sent.
+// The participant lists are filled in only when they are explicitly asked for:
+// a status can reach thousands of contacts, and the counts alone are far
+// cheaper to compute and to send.
+type StatusAckSummary struct {
+	MessageID            string
+	Received             int
+	Read                 int
+	ReceivedParticipants []string
+	ReadParticipants     []string
+}
+
 type StoredContact struct {
 	Jid      types.JID
 	Name     string

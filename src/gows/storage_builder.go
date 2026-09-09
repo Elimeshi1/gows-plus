@@ -77,5 +77,9 @@ func BuildStorage(container *sqlstorage.GContainer, gows *GoWS, cfg StorageConfi
 	}
 
 	st.Lidmap = container.NewLidmapStorage()
+	// Status ack counting is not part of the message storage config: it is small,
+	// it is the only record of who saw a status, and turning message storage off
+	// is no reason to stop counting.
+	st.StatusAcks = container.NewStatusAckStorage()
 	return st
 }

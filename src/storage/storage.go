@@ -16,6 +16,19 @@ type Storage struct {
 	Labels               LabelStorage
 	LabelAssociations    LabelAssociationStorage
 	Lidmap               LidmapStorage
+	StatusAcks           StatusAckStorage
+}
+
+// StatusAckStorage keeps who received and who viewed each status we sent.
+type StatusAckStorage interface {
+	// UpsertMany records a batch of observations, keeping the highest ack ever
+	// seen for a (message, participant) pair.
+	UpsertMany(records []StatusAckRecord) error
+	// GetSummary returns the counts for one status, and the viewer lists when
+	// participants is set.
+	GetSummary(messageID string, participants bool) (*StatusAckSummary, error)
+	// DeleteBefore drops rows last updated before the given time.
+	DeleteBefore(t time.Time) error
 }
 
 type MessageStorage interface {

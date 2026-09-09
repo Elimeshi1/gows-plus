@@ -194,6 +194,7 @@ service MessageService {
   //
   rpc GetMessageById(EntityByIdRequest) returns (Json);
   rpc GetMessages(GetMessagesRequest) returns (JsonList);
+  rpc GetStatusAck(StatusAckRequest) returns (StatusAckResponse);
 
 
   rpc GetChats(GetChatsRequest) returns (JsonList);
@@ -691,6 +692,28 @@ message DownloadMediaResponse {
 message EntityByIdRequest {
   Session session = 1;
   string id = 2;
+}
+
+// Delivery/read counters for a status@broadcast message we sent.
+// The counting happens in the event handler that writes to the session
+// database, so the numbers do not depend on the event stream keeping up.
+message StatusAckRequest {
+  Session session = 1;
+  // Short status message id, e.g. 3EB0C767D097E9ECFE8B
+  string message_id = 2;
+  // Also return the viewer JIDs, not just the counts. A status can reach
+  // thousands of contacts, so the lists are opt-in.
+  bool participants = 3;
+}
+
+message StatusAckResponse {
+  string message_id = 1;
+  // Unique participants that received the status (ack >= 2)
+  uint64 received = 2;
+  // Unique participants that viewed the status (ack >= 3)
+  uint64 read = 3;
+  repeated string received_participants = 4;
+  repeated string read_participants = 5;
 }
 
 message Json {

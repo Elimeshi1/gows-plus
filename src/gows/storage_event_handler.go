@@ -22,6 +22,10 @@ type StorageEventHandler struct {
 	storage *storage.Storage
 	// ignoreJids specifies which types of JIDs should be ignored when processing events.
 	ignoreJids *IgnoreJidsConfig
+	// statusAcks counts who received and who viewed the statuses we sent. It is
+	// fed from here, in the storage branch of the event fan-out, so the counters
+	// survive a gRPC listener that falls behind or reconnects. nil disables it.
+	statusAcks *StatusAckWriter
 }
 
 func (st *StorageEventHandler) shouldIgnoreJID(jid types.JID) bool {
@@ -279,6 +283,14 @@ func (st *StorageEventHandler) handleMessageEvent(event *events.Message) {
 }
 
 func (st *StorageEventHandler) handleReceipt(event *events.Receipt) {
+	// Count status viewers before anything else. This branch of the fan-out
+	// writes straight to the database, so a slow gRPC listener can no longer cost
+	// us a view, and it also covers the receipt types the status switch below
+	// deliberately ignores (read-self).
+	if isStatusBroadcast(event.Chat) {
+		st.statusAcks.Record(event)
+	}
+
 	var status storage.Status
 	switch event.Type {
 	case types.ReceiptTypeDelivered:
@@ -290,10 +302,6 @@ func (st *StorageEventHandler) handleReceipt(event *events.Receipt) {
 	default:
 		st.log.Debugf("Unknown receipt type: %v", event.Type)
 		return
-	}
-	if event.Chat.Server == types.StatusBroadcastJID.Server && event.Chat.User == types.StatusBroadcastJID.User {
-		// Ignore
-		st.log.Debugf("Ignoring receipt for '%v(%v)'", event.Chat, event.MessageIDs)
 	}
 	for _, id := range event.MessageIDs {
 		st.log.Debugf("Updating status for message %v(%v) to %v (receipt type: '%v')", event.Chat, id, status, event.Type.GoString())
