@@ -1,3 +1,5 @@
+MEOW_BRANCH ?= fork-main-2026-10-13
+
 all: clean build-proto test build
 
 test:
@@ -24,3 +26,12 @@ tidy: build-proto
 build:
 	cd src && \
 	go build -o ../bin/gows .
+
+# Update whatsmeow fork to the latest commit on MEOW_BRANCH (override: make up-meow MEOW_BRANCH=...)
+up-meow:
+	cd src && \
+	version=$$(GOPROXY=direct GONOSUMDB=github.com/devlikeapro go list -m -f '{{.Version}}' github.com/devlikeapro/whatsmeow@$(MEOW_BRANCH)) && \
+	echo "whatsmeow $(MEOW_BRANCH) => $$version" && \
+	go mod edit -replace go.mau.fi/whatsmeow=github.com/devlikeapro/whatsmeow@$$version && \
+	sed -i "s|^\(replace go.mau.fi/whatsmeow => github.com/devlikeapro/whatsmeow [^ ]*\).*|\1 // branch: $(MEOW_BRANCH)|" go.mod && \
+	GONOSUMDB=github.com/devlikeapro go mod tidy
