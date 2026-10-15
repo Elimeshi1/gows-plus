@@ -432,7 +432,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 			)
 
 			if err != nil {
-				cli.Log.Infof("Failed to generate video thumbnail: %v", err)
+				cli.Log.Warnf("Failed to generate video thumbnail: %v", err)
 			}
 
 			var gifPlayback *bool
@@ -480,7 +480,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 			)
 
 			if err != nil {
-				cli.Log.Infof("Failed to generate ptv thumbnail: %v", err)
+				cli.Log.Warnf("Failed to generate ptv thumbnail: %v", err)
 			}
 
 			message.PtvMessage = &waE2E.VideoMessage{
