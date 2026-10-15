@@ -51,7 +51,11 @@ func (st *StorageEventHandler) shouldIgnoreJID(jid types.JID) bool {
 }
 
 func (st *StorageEventHandler) GetMessageForRetry(requester, to types.JID, id types.MessageID) *waE2E.Message {
-	msg, err := st.storage.Messages.GetMessage(id)
+	msg, err := st.storage.Messages.GetMessageWithRetries(id)
+	if errors.Is(err, storage.ErrNotFound) {
+		st.log.Warnf("Message not found in storage for retry - requester %v, to %v, id %v", requester, to, id)
+		return nil
+	}
 	if err != nil {
 		st.log.Errorf("Error getting message for retry - requester %v, to %v, id %v: %v", requester, to, id, err)
 		return nil
