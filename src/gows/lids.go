@@ -17,6 +17,10 @@ func (gows *GoWS) ResolvePNByLid(ctx context.Context, lid types.JID) (types.JID,
 	if err != nil {
 		return types.EmptyJID, err
 	}
+	if !pn.IsEmpty() && !gows.validLIDPNPair(lid, pn) {
+		gows.Log.Warnf("Ignoring suspicious stored LID-PN mapping %v => %v", lid, pn)
+		pn = types.EmptyJID
+	}
 	if !pn.IsEmpty() {
 		return pn, nil
 	}
