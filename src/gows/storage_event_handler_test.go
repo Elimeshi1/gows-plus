@@ -179,6 +179,33 @@ func TestHandleLabelEditWithoutNameAndColor(t *testing.T) {
 	if labels.upserted[0].Name != "" || labels.upserted[0].Color != 0 {
 		t.Fatalf("expected empty name and zero color, got %v", labels.upserted[0])
 	}
+	if labels.upserted[0].Type != nil || labels.upserted[0].IsActive != nil {
+		t.Fatalf("expected no type and no isActive, got %v", labels.upserted[0])
+	}
+}
+
+// WhatsApp lists (Unread, Favourites, ...) live in the same collection - keep their type, the API tells them apart
+func TestHandleLabelEditKeepsListType(t *testing.T) {
+	st, _, labels, _ := newTestHandler()
+
+	name := "Unread"
+	listType := waSyncAction.LabelEditAction_UNREAD
+	active := true
+	st.handleLabelEdit(&events.LabelEdit{
+		LabelID: "41",
+		Action:  &waSyncAction.LabelEditAction{Name: &name, Type: &listType, IsActive: &active},
+	})
+
+	if len(labels.upserted) != 1 {
+		t.Fatalf("expected the list to be upserted, got %v", labels.upserted)
+	}
+	label := labels.upserted[0]
+	if label.Type == nil || *label.Type != 1 {
+		t.Fatalf("expected type 1 (UNREAD), got %v", label.Type)
+	}
+	if label.IsActive == nil || !*label.IsActive {
+		t.Fatalf("expected isActive true, got %v", label.IsActive)
+	}
 }
 
 func TestHandleLabelEditDeleted(t *testing.T) {

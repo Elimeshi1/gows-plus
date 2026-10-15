@@ -90,9 +90,11 @@ type ChatFilter struct {
 
 // Label represents a label that can be associated with chats
 type Label struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Color int    `json:"color"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Color    int    `json:"color"`
+	Type     *int   `json:"type,omitempty"`
+	IsActive *bool  `json:"isActive,omitempty"`
 }
 
 // LabelAssociation represents an association between a label and a JID
