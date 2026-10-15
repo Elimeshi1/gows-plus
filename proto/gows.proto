@@ -787,6 +787,8 @@ message Label {
   string id = 1;
   string name = 2;
   int32 color = 4;
+  optional int32 type = 5;
+  optional bool isActive = 6;
 }
 
 message UpsertLabelRequest {
