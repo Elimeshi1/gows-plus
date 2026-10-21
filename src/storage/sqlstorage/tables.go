@@ -101,3 +101,24 @@ var LabelAssociationsTable = Table{
 		"data",
 	},
 }
+
+var GroupMemberLabelsTable = Table{
+	Name: "gows_group_member_labels",
+	Columns: []string{
+		"group_jid",
+		"member_jid",
+		"timestamp",
+		"data",
+	},
+	DataField: "data",
+	OnConflict: []string{
+		"group_jid",
+		"member_jid",
+	},
+	UpdateOnConflict: []string{
+		"timestamp",
+		"data",
+	},
+	// Last write wins - changes can arrive out of order (live message vs history sync)
+	UpdateOnConflictWhere: "EXCLUDED.timestamp >= gows_group_member_labels.timestamp",
+}
