@@ -498,12 +498,23 @@ func (gows *GoWS) SendMessage(ctx context.Context, to types.JID, msg *waE2E.Mess
 		}
 	}
 
+	sender := resp.Sender
+	if sender.IsEmpty() {
+		sender = gows.GetOwnId()
+	}
+	var senderAlt types.JID
+	if sender.Server == types.HiddenUserServer {
+		senderAlt = gows.GetOwnId()
+	} else {
+		senderAlt = gows.Store.LID
+	}
 	info := &types.MessageInfo{
 		MessageSource: types.MessageSource{
-			Chat:     to,
-			Sender:   gows.GetOwnId(),
-			IsFromMe: true,
-			IsGroup:  to.Server == types.GroupServer,
+			Chat:      to,
+			Sender:    sender,
+			SenderAlt: senderAlt,
+			IsFromMe:  true,
+			IsGroup:   to.Server == types.GroupServer,
 		},
 		ID:        resp.ID,
 		Timestamp: resp.Timestamp,
