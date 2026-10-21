@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"time"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -108,3 +109,13 @@ type LidmapEntry struct {
 	Lid types.JID `json:"lid"`
 	Pn  types.JID `json:"pn"`
 }
+
+// GroupMemberLabel is a group member tag, keyed by the member JID as received
+type GroupMemberLabel struct {
+	GroupJID  types.JID `json:"groupJid"`
+	MemberJID types.JID `json:"memberJid"` // LID in LID-addressed groups, phone number otherwise
+	Label     string    `json:"label"`     // empty when the tag was removed
+	Timestamp time.Time `json:"timestamp"`
+}
+
+var ErrEmptyGroupMember = errors.New("group member label without a member")
