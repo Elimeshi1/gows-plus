@@ -62,19 +62,38 @@ func onConflictDoUpdate(conflictFields []string, setFields []string, where strin
 	return clause
 }
 
-func (kv *EntityRepository[Entity]) UpsertOne(entity *Entity) error {
+func (kv *EntityRepository[Entity]) rowValues(entity *Entity) ([]interface{}, error) {
 	fields := kv.mapper.ToFields(entity)
 	columns := kv.table.Columns
 	data, err := kv.mapper.Marshal(entity)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fields["data"] = string(data)
 	values := make([]interface{}, 0, len(columns))
 	for _, c := range columns {
 		values = append(values, fields[c])
 	}
-	sql := sq.Insert(kv.table.Name).Columns(columns...).Values(values...)
+	return values, nil
+}
+
+func (kv *EntityRepository[Entity]) UpsertOne(entity *Entity) error {
+	return kv.UpsertMany([]*Entity{entity})
+}
+
+// UpsertMany writes all entities in one statement
+func (kv *EntityRepository[Entity]) UpsertMany(entities []*Entity) error {
+	if len(entities) == 0 {
+		return nil
+	}
+	sql := sq.Insert(kv.table.Name).Columns(kv.table.Columns...)
+	for _, entity := range entities {
+		values, err := kv.rowValues(entity)
+		if err != nil {
+			return err
+		}
+		sql = sql.Values(values...)
+	}
 	sql = sql.Suffix(kv.onConflict)
 	query, args, err := sql.ToSql()
 	if err != nil {

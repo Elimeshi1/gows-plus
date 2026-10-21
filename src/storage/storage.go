@@ -15,6 +15,7 @@ type Storage struct {
 	ChatEphemeralSetting ChatEphemeralSettingStorage
 	Labels               LabelStorage
 	LabelAssociations    LabelAssociationStorage
+	GroupMemberLabels    GroupMemberLabelStorage
 	Lidmap               LidmapStorage
 }
 
@@ -69,6 +70,15 @@ type LabelAssociationStorage interface {
 	AddAssociation(jid types.JID, labelID string) error
 	RemoveAssociation(jid types.JID, labelID string) error
 	RemoveAssociationsByLabelID(labelID string) error
+}
+
+type GroupMemberLabelStorage interface {
+	UpsertGroupMemberLabel(label *GroupMemberLabel) error
+	UpsertGroupMemberLabels(labels []*GroupMemberLabel) error
+	GetGroupMemberLabels(group types.JID) ([]*GroupMemberLabel, error)
+	GetGroupMemberLabel(group types.JID, member types.JID) (*GroupMemberLabel, error)
+	DeleteGroupMemberLabel(group types.JID, member types.JID) error
+	DeleteGroupMemberLabels(group types.JID) error
 }
 
 type LidmapStorage interface {

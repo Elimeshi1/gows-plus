@@ -41,6 +41,12 @@ message JidStringRequest {
   string value = 3;
 }
 
+message GroupMemberRequest {
+  Session session = 1;
+  string jid = 2; // group
+  string member = 3; // lid or phone number jid
+}
+
 message JidBoolRequest {
   Session session = 1;
   string jid = 2;
@@ -111,6 +117,9 @@ service MessageService {
   rpc SetGroupAnnounce(JidBoolRequest) returns (Empty); // send messages only by admins
   rpc SetGroupMemberAddMode(JidBoolRequest) returns (Empty); // who can add members - true - all members, false - admins only
   rpc SetGroupMemberShareHistoryMode(JidBoolRequest) returns (Empty); // who can share message history with new members - true - all members, false - admins only
+  rpc GetGroupMemberLabels(JidRequest) returns (JsonList); // member tags the participants set for themselves
+  rpc GetGroupMemberLabel(GroupMemberRequest) returns (Json); // one member's tag, null when none
+  rpc SetGroupMemberLabel(JidStringRequest) returns (Empty); // my member tag in the group, empty value clears it
   rpc UpdateGroupParticipants(UpdateParticipantsRequest) returns (JsonList);
   rpc SetGroupJoinApprovalMode(JidBoolRequest) returns (Empty);
   rpc GetGroupRequestParticipants(JidRequest) returns (JsonList);

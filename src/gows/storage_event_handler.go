@@ -3,6 +3,7 @@ package gows
 import (
 	"errors"
 	"runtime/debug"
+	"time"
 
 	"github.com/avast/retry-go"
 	"github.com/devlikeapro/gows/storage"
@@ -189,6 +190,7 @@ func (st *StorageEventHandler) processEvent(event interface{}) {
 			return
 		}
 		st.handleGroupInfo(info)
+		st.handleGroupMembersLeft(info)
 	case *events.DeleteChat:
 		deleteChat := event.(*events.DeleteChat)
 		if st.shouldIgnoreJID(deleteChat.JID) {
@@ -244,6 +246,29 @@ func (st *StorageEventHandler) handleMessageEvent(event *events.Message) {
 		err := st.storage.Messages.DeleteMessage(id)
 		if err != nil {
 			st.log.Errorf("Error deleting message %v: %v", id, err)
+		}
+		return
+	}
+
+	// Group member tag - changed
+	memberLabel := protocolMessage.GetMemberLabel()
+	isMemberLabel := protocolMessage != nil &&
+		protocolMessage.GetType() == waE2E.ProtocolMessage_GROUP_MEMBER_LABEL_CHANGE &&
+		memberLabel != nil &&
+		event.Info.Chat.Server == types.GroupServer
+	if isMemberLabel {
+		label := &storage.GroupMemberLabel{
+			GroupJID:  event.Info.Chat,
+			MemberJID: event.Info.Sender.ToNonAD(),
+			Label:     memberLabel.GetLabel(),
+			Timestamp: event.Info.Timestamp,
+		}
+		if memberLabel.GetLabelTimestamp() > 0 {
+			label.Timestamp = time.Unix(memberLabel.GetLabelTimestamp(), 0)
+		}
+		err := st.storage.GroupMemberLabels.UpsertGroupMemberLabel(label)
+		if err != nil {
+			st.log.Errorf("Error saving member tag for %v in %v: %v", label.MemberJID, label.GroupJID, err)
 		}
 		return
 	}
@@ -330,6 +355,9 @@ func (st *StorageEventHandler) handleHistorySync(event *events.HistorySync) {
 		}
 
 		go st.saveHistoryForOneChat(conv, jid)
+		if jid.Server == types.GroupServer {
+			go st.saveGroupMemberLabelsFromHistory(conv, jid)
+		}
 	}
 	st.log.Debugf("Saved history for %v chats", len(conversations))
 }
@@ -384,6 +412,10 @@ func (st *StorageEventHandler) handleMeLeftGroup(info *events.GroupInfo) bool {
 			if err != nil {
 				st.log.Errorf("Error deleting group %v: %v", info.JID, err)
 			}
+			err = st.storage.GroupMemberLabels.DeleteGroupMemberLabels(info.JID)
+			if err != nil {
+				st.log.Errorf("Error deleting member tags of group %v: %v", info.JID, err)
+			}
 			return true
 		}
 	}
@@ -398,6 +430,44 @@ func (st *StorageEventHandler) handleGroupInfo(info *events.GroupInfo) {
 		st.log.Errorf("Error updating group %v: %v", info.JID, err)
 	}
 	return
+}
+
+func (st *StorageEventHandler) handleGroupMembersLeft(info *events.GroupInfo) {
+	for _, member := range info.Leave {
+		err := st.storage.GroupMemberLabels.DeleteGroupMemberLabel(info.JID, member.ToNonAD())
+		if err != nil {
+			st.log.Errorf("Error deleting member tag for %v in %v: %v", member, info.JID, err)
+		}
+	}
+}
+
+// The only source for tags set before pairing
+func (st *StorageEventHandler) saveGroupMemberLabelsFromHistory(conv *waHistorySync.Conversation, group types.JID) {
+	var labels []*storage.GroupMemberLabel
+	for _, participant := range conv.GetParticipant() {
+		memberLabel := participant.GetMemberLabel()
+		if memberLabel == nil {
+			continue
+		}
+		member, err := types.ParseJID(participant.GetUserJID())
+		if err != nil {
+			st.log.Warnf("Error parsing participant JID %q in %v: %v", participant.GetUserJID(), group, err)
+			continue
+		}
+		labels = append(labels, &storage.GroupMemberLabel{
+			GroupJID:  group,
+			MemberJID: member.ToNonAD(),
+			Label:     memberLabel.GetLabel(),
+			Timestamp: time.Unix(memberLabel.GetLabelTimestamp(), 0),
+		})
+	}
+	if len(labels) == 0 {
+		return
+	}
+	err := st.storage.GroupMemberLabels.UpsertGroupMemberLabels(labels)
+	if err != nil {
+		st.log.Errorf("Error saving %d member tags from history for %v: %v", len(labels), group, err)
+	}
 }
 
 func (st *StorageEventHandler) handleDeleteChat(event *events.DeleteChat) {
