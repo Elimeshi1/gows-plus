@@ -103,7 +103,11 @@ func keepOwnStatus(jid types.JID, isFromMe bool) bool {
 }
 
 func (st *StorageEventHandler) GetMessageForRetry(requester, to types.JID, id types.MessageID) *waE2E.Message {
-	msg, err := st.storage.Messages.GetMessage(id)
+	msg, err := st.storage.Messages.GetMessageWithRetries(id)
+	if errors.Is(err, storage.ErrNotFound) {
+		st.log.Warnf("Message not found in storage for retry - requester %v, to %v, id %v", requester, to, id)
+		return nil
+	}
 	if err != nil {
 		st.log.Errorf("Error getting message for retry - requester %v, to %v, id %v: %v", requester, to, id, err)
 		return nil
@@ -169,6 +173,17 @@ func isRealMessage(event *events.Message) bool {
 }
 
 func (st *StorageEventHandler) handleEvent(event interface{}) {
+	switch event.(type) {
+	case *events.LabelEdit, *events.LabelAssociationChat:
+		// Keep whatsmeow's order - the last change per label/chat wins
+		// In case of "add" then "delete" and similar events for 1 entity
+		st.processEvent(event)
+	default:
+		go st.processEvent(event)
+	}
+}
+
+func (st *StorageEventHandler) processEvent(event interface{}) {
 	// Handle all panic and log error + stack
 	defer func() {
 		if err := recover(); err != nil {
@@ -230,6 +245,7 @@ func (st *StorageEventHandler) handleEvent(event interface{}) {
 			return
 		}
 		st.handleGroupInfo(info)
+		st.handleGroupMembersLeft(info)
 	case *events.DeleteChat:
 		deleteChat := event.(*events.DeleteChat)
 		if st.shouldIgnoreJID(deleteChat.JID) {
@@ -285,6 +301,29 @@ func (st *StorageEventHandler) handleMessageEvent(event *events.Message) {
 		err := st.storage.Messages.DeleteMessage(id)
 		if err != nil {
 			st.log.Errorf("Error deleting message %v: %v", id, err)
+		}
+		return
+	}
+
+	// Group member tag - changed
+	memberLabel := protocolMessage.GetMemberLabel()
+	isMemberLabel := protocolMessage != nil &&
+		protocolMessage.GetType() == waE2E.ProtocolMessage_GROUP_MEMBER_LABEL_CHANGE &&
+		memberLabel != nil &&
+		event.Info.Chat.Server == types.GroupServer
+	if isMemberLabel {
+		label := &storage.GroupMemberLabel{
+			GroupJID:  event.Info.Chat,
+			MemberJID: event.Info.Sender.ToNonAD(),
+			Label:     memberLabel.GetLabel(),
+			Timestamp: event.Info.Timestamp,
+		}
+		if memberLabel.GetLabelTimestamp() > 0 {
+			label.Timestamp = time.Unix(memberLabel.GetLabelTimestamp(), 0)
+		}
+		err := st.storage.GroupMemberLabels.UpsertGroupMemberLabel(label)
+		if err != nil {
+			st.log.Errorf("Error saving member tag for %v in %v: %v", label.MemberJID, label.GroupJID, err)
 		}
 		return
 	}
@@ -375,6 +414,9 @@ func (st *StorageEventHandler) handleHistorySync(event *events.HistorySync) {
 		}
 
 		go st.saveHistoryForOneChat(conv, jid)
+		if jid.Server == types.GroupServer {
+			go st.saveGroupMemberLabelsFromHistory(conv, jid)
+		}
 	}
 	st.log.Debugf("Saved history for %v chats", len(conversations))
 }
@@ -429,6 +471,10 @@ func (st *StorageEventHandler) handleMeLeftGroup(info *events.GroupInfo) bool {
 			if err != nil {
 				st.log.Errorf("Error deleting group %v: %v", info.JID, err)
 			}
+			err = st.storage.GroupMemberLabels.DeleteGroupMemberLabels(info.JID)
+			if err != nil {
+				st.log.Errorf("Error deleting member tags of group %v: %v", info.JID, err)
+			}
 			return true
 		}
 	}
@@ -443,6 +489,44 @@ func (st *StorageEventHandler) handleGroupInfo(info *events.GroupInfo) {
 		st.log.Errorf("Error updating group %v: %v", info.JID, err)
 	}
 	return
+}
+
+func (st *StorageEventHandler) handleGroupMembersLeft(info *events.GroupInfo) {
+	for _, member := range info.Leave {
+		err := st.storage.GroupMemberLabels.DeleteGroupMemberLabel(info.JID, member.ToNonAD())
+		if err != nil {
+			st.log.Errorf("Error deleting member tag for %v in %v: %v", member, info.JID, err)
+		}
+	}
+}
+
+// The only source for tags set before pairing
+func (st *StorageEventHandler) saveGroupMemberLabelsFromHistory(conv *waHistorySync.Conversation, group types.JID) {
+	var labels []*storage.GroupMemberLabel
+	for _, participant := range conv.GetParticipant() {
+		memberLabel := participant.GetMemberLabel()
+		if memberLabel == nil {
+			continue
+		}
+		member, err := types.ParseJID(participant.GetUserJID())
+		if err != nil {
+			st.log.Warnf("Error parsing participant JID %q in %v: %v", participant.GetUserJID(), group, err)
+			continue
+		}
+		labels = append(labels, &storage.GroupMemberLabel{
+			GroupJID:  group,
+			MemberJID: member.ToNonAD(),
+			Label:     memberLabel.GetLabel(),
+			Timestamp: time.Unix(memberLabel.GetLabelTimestamp(), 0),
+		})
+	}
+	if len(labels) == 0 {
+		return
+	}
+	err := st.storage.GroupMemberLabels.UpsertGroupMemberLabels(labels)
+	if err != nil {
+		st.log.Errorf("Error saving %d member tags from history for %v: %v", len(labels), group, err)
+	}
 }
 
 func (st *StorageEventHandler) handleDeleteChat(event *events.DeleteChat) {
@@ -464,7 +548,13 @@ func (st *StorageEventHandler) handleLabelEdit(event *events.LabelEdit) {
 	action := event.Action
 	// Delete
 	if action.GetDeleted() {
-		err := st.storage.Labels.DeleteLabel(event.LabelID)
+		// No FK cascade anymore, drop the associations here
+		err := st.storage.LabelAssociations.RemoveAssociationsByLabelID(event.LabelID)
+		if err != nil {
+			st.log.Errorf("Error removing label associations for label %v: %v", event.LabelID, err)
+			return
+		}
+		err = st.storage.Labels.DeleteLabel(event.LabelID)
 		if err != nil {
 			st.log.Errorf("Error deleting label %v: %v", event.LabelID, err)
 			return
@@ -475,9 +565,14 @@ func (st *StorageEventHandler) handleLabelEdit(event *events.LabelEdit) {
 
 	// Create
 	label := &storage.Label{
-		ID:    event.LabelID,
-		Name:  action.GetName(),
-		Color: int(action.GetColor()),
+		ID:       event.LabelID,
+		Name:     action.GetName(),
+		Color:    int(action.GetColor()),
+		IsActive: action.IsActive,
+	}
+	if action.Type != nil {
+		labelType := int(action.GetType())
+		label.Type = &labelType
 	}
 
 	err := st.storage.Labels.UpsertLabel(label)
@@ -496,21 +591,8 @@ func (st *StorageEventHandler) handleLabelAssociationChat(event *events.LabelAss
 	labeled := event.Action.GetLabeled()
 
 	if labeled {
-		// Make sure we have the label
-		// it can happen on full sync or event disordering
-		err := retry.Do(
-			func() error {
-				_, err := st.storage.Labels.GetLabelById(labelID)
-				if err != nil {
-					return err
-				}
-				return nil
-			},
-			retry.Attempts(6),
-			retry.Delay(100*time.Millisecond),
-		)
-
-		err = st.storage.LabelAssociations.AddAssociation(jid, labelID)
+		// The label may not be stored yet (it can come later in the sync), store the association anyway
+		err := st.storage.LabelAssociations.AddAssociation(jid, labelID)
 		if err != nil {
 			st.log.Errorf("Error adding label association for JID %v and label %v: %v", jid, labelID, err)
 			return

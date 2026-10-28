@@ -107,6 +107,8 @@ func (s SqlMessageStore) GetMessageWithRetries(id types.MessageID) (msg *storage
 			return nil
 		},
 		retry.Attempts(6),
+		// Return the last error as-is so errors.Is(err, storage.ErrNotFound) works
+		retry.LastErrorOnly(true),
 	)
 	return msg, err
 }

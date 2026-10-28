@@ -8,9 +8,12 @@ import (
 	"github.com/devlikeapro/gows/storage/noop"
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
+	"time"
 )
 
 // spyMessageStorage records the messages we asked to delete.
@@ -24,10 +27,11 @@ func (s *spyMessageStorage) DeleteMessage(id types.MessageID) error {
 	return nil
 }
 
-// spyLabelStorage records the labels we upserted.
+// spyLabelStorage records the labels we upserted and deleted.
 type spyLabelStorage struct {
 	*noop.LabelStorage
 	upserted []*storage.Label
+	deleted  []string
 }
 
 func (s *spyLabelStorage) UpsertLabel(label *storage.Label) error {
@@ -35,17 +39,53 @@ func (s *spyLabelStorage) UpsertLabel(label *storage.Label) error {
 	return nil
 }
 
-func newTestHandler() (*StorageEventHandler, *spyMessageStorage, *spyLabelStorage) {
+func (s *spyLabelStorage) DeleteLabel(id string) error {
+	s.deleted = append(s.deleted, id)
+	return nil
+}
+
+// spyLabelAssociationStorage records the association calls in order.
+type spyLabelAssociationStorage struct {
+	*noop.LabelAssociationStorage
+	ops []string
+}
+
+func (s *spyLabelAssociationStorage) AddAssociation(jid types.JID, labelID string) error {
+	s.ops = append(s.ops, "add "+labelID+" "+jid.String())
+	return nil
+}
+
+func (s *spyLabelAssociationStorage) RemoveAssociation(jid types.JID, labelID string) error {
+	s.ops = append(s.ops, "remove "+labelID+" "+jid.String())
+	return nil
+}
+
+func (s *spyLabelAssociationStorage) RemoveAssociationsByLabelID(labelID string) error {
+	s.ops = append(s.ops, "removeByLabel "+labelID)
+	return nil
+}
+
+func newTestHandler() (*StorageEventHandler, *spyMessageStorage, *spyLabelStorage, *spyLabelAssociationStorage) {
 	messages := &spyMessageStorage{MessageStorage: noop.NewMessageStorage()}
 	labels := &spyLabelStorage{LabelStorage: noop.NewLabelStorage()}
+	associations := &spyLabelAssociationStorage{LabelAssociationStorage: noop.NewLabelAssociationStorage()}
 	st := &StorageEventHandler{
 		log: gowsLog.Stdout("test", "ERROR", false),
 		storage: &storage.Storage{
-			Messages: messages,
-			Labels:   labels,
+			Messages:          messages,
+			Labels:            labels,
+			LabelAssociations: associations,
 		},
 	}
-	return st, messages, labels
+	return st, messages, labels, associations
+}
+
+func labelChatEvent(labelID string, jid types.JID, labeled bool) *events.LabelAssociationChat {
+	return &events.LabelAssociationChat{
+		JID:     jid,
+		LabelID: labelID,
+		Action:  &waSyncAction.LabelAssociationAction{Labeled: &labeled},
+	}
 }
 
 func conversationMessage(text string) *events.Message {
@@ -56,7 +96,7 @@ func conversationMessage(text string) *events.Message {
 }
 
 func TestHandleMessageEventNilMessage(t *testing.T) {
-	st, messages, _ := newTestHandler()
+	st, messages, _, _ := newTestHandler()
 
 	// events.Message.Message is nil for messages we could not decrypt
 	st.handleMessageEvent(&events.Message{Info: types.MessageInfo{ID: "id-1"}})
@@ -69,7 +109,7 @@ func TestHandleMessageEventNilMessage(t *testing.T) {
 // ProtocolMessage_REVOKE is the zero value of the enum, so a message without a
 // protocol message must never be mistaken for a revoke.
 func TestHandleMessageEventPlainMessageIsNotRevoke(t *testing.T) {
-	st, messages, _ := newTestHandler()
+	st, messages, _, _ := newTestHandler()
 
 	st.handleMessageEvent(conversationMessage("hello"))
 
@@ -79,7 +119,7 @@ func TestHandleMessageEventPlainMessageIsNotRevoke(t *testing.T) {
 }
 
 func TestHandleMessageEventRevokeWithoutKey(t *testing.T) {
-	st, messages, _ := newTestHandler()
+	st, messages, _, _ := newTestHandler()
 
 	revoke := waE2E.ProtocolMessage_REVOKE
 	event := &events.Message{
@@ -96,7 +136,7 @@ func TestHandleMessageEventRevokeWithoutKey(t *testing.T) {
 }
 
 func TestHandleMessageEventRevoke(t *testing.T) {
-	st, messages, _ := newTestHandler()
+	st, messages, _, _ := newTestHandler()
 
 	revoke := waE2E.ProtocolMessage_REVOKE
 	id := "revoked-id"
@@ -129,7 +169,7 @@ func TestExtractEphemeralSettingsFromProtocolMessageWithoutType(t *testing.T) {
 
 // LabelEditAction has optional Name/Color, both used to be dereferenced blindly.
 func TestHandleLabelEditWithoutNameAndColor(t *testing.T) {
-	st, _, labels := newTestHandler()
+	st, _, labels, _ := newTestHandler()
 
 	st.handleLabelEdit(&events.LabelEdit{
 		LabelID: "label-1",
@@ -142,10 +182,37 @@ func TestHandleLabelEditWithoutNameAndColor(t *testing.T) {
 	if labels.upserted[0].Name != "" || labels.upserted[0].Color != 0 {
 		t.Fatalf("expected empty name and zero color, got %v", labels.upserted[0])
 	}
+	if labels.upserted[0].Type != nil || labels.upserted[0].IsActive != nil {
+		t.Fatalf("expected no type and no isActive, got %v", labels.upserted[0])
+	}
+}
+
+// WhatsApp lists (Unread, Favourites, ...) live in the same collection - keep their type, the API tells them apart
+func TestHandleLabelEditKeepsListType(t *testing.T) {
+	st, _, labels, _ := newTestHandler()
+
+	name := "Unread"
+	listType := waSyncAction.LabelEditAction_UNREAD
+	active := true
+	st.handleLabelEdit(&events.LabelEdit{
+		LabelID: "41",
+		Action:  &waSyncAction.LabelEditAction{Name: &name, Type: &listType, IsActive: &active},
+	})
+
+	if len(labels.upserted) != 1 {
+		t.Fatalf("expected the list to be upserted, got %v", labels.upserted)
+	}
+	label := labels.upserted[0]
+	if label.Type == nil || *label.Type != 1 {
+		t.Fatalf("expected type 1 (UNREAD), got %v", label.Type)
+	}
+	if label.IsActive == nil || !*label.IsActive {
+		t.Fatalf("expected isActive true, got %v", label.IsActive)
+	}
 }
 
 func TestHandleLabelEditDeleted(t *testing.T) {
-	st, _, labels := newTestHandler()
+	st, _, labels, associations := newTestHandler()
 
 	deleted := true
 	st.handleLabelEdit(&events.LabelEdit{
@@ -156,10 +223,55 @@ func TestHandleLabelEditDeleted(t *testing.T) {
 	if len(labels.upserted) != 0 {
 		t.Fatalf("a deleted label must not be upserted, got %v", labels.upserted)
 	}
+	// No FK cascade in the DB anymore - the associations go first, then the label
+	if len(associations.ops) != 1 || associations.ops[0] != "removeByLabel label-1" {
+		t.Fatalf("expected the label associations to be removed, got %v", associations.ops)
+	}
+	if len(labels.deleted) != 1 || labels.deleted[0] != "label-1" {
+		t.Fatalf("expected the label to be deleted, got %v", labels.deleted)
+	}
+}
+
+// Label events run one by one in handleEvent, so the last change per label/chat wins (#2290).
+func TestHandleEventLabelAssociationKeepsOrder(t *testing.T) {
+	st, _, _, associations := newTestHandler()
+	jid := types.NewJID("100000000000001", types.HiddenUserServer)
+
+	st.handleEvent(labelChatEvent("label-1", jid, true))
+	st.handleEvent(labelChatEvent("label-1", jid, false))
+	st.handleEvent(labelChatEvent("label-1", jid, true))
+	st.handleEvent(labelChatEvent("label-1", jid, false))
+
+	expected := []string{
+		"add label-1 " + jid.String(),
+		"remove label-1 " + jid.String(),
+		"add label-1 " + jid.String(),
+		"remove label-1 " + jid.String(),
+	}
+	if len(associations.ops) != len(expected) {
+		t.Fatalf("expected %v, got %v", expected, associations.ops)
+	}
+	for i := range expected {
+		if associations.ops[i] != expected[i] {
+			t.Fatalf("expected %v, got %v", expected, associations.ops)
+		}
+	}
+}
+
+// The label can arrive after the association in a sync - store the association anyway, no waiting.
+func TestHandleLabelAssociationChatWithoutLabel(t *testing.T) {
+	st, _, _, associations := newTestHandler()
+	jid := types.NewJID("100000000000001", types.HiddenUserServer)
+
+	st.handleLabelAssociationChat(labelChatEvent("label-404", jid, true))
+
+	if len(associations.ops) != 1 || associations.ops[0] != "add label-404 "+jid.String() {
+		t.Fatalf("expected the association to be added, got %v", associations.ops)
+	}
 }
 
 func TestHandleHistorySyncWithoutData(t *testing.T) {
-	st, _, _ := newTestHandler()
+	st, _, _, _ := newTestHandler()
 
 	// Must not dereference a nil event.Data
 	st.handleHistorySync(&events.HistorySync{})
@@ -181,7 +293,7 @@ func statusReceipt(sender types.JID, fromMe bool, messageSender types.JID) *even
 }
 
 func TestIsOwnStatusReceipt(t *testing.T) {
-	st, _, _ := newTestHandler()
+	st, _, _, _ := newTestHandler()
 	viewer := types.NewJID("9492079063155", types.HiddenUserServer)
 	stranger := types.NewJID("111222333444555", types.HiddenUserServer)
 
@@ -198,5 +310,124 @@ func TestIsOwnStatusReceipt(t *testing.T) {
 	// Same thing without the IsFromMe flag: the named author is not us.
 	if st.isOwnStatusReceipt(statusReceipt(viewer, false, stranger)) {
 		t.Fatal("a receipt about somebody else's status must not be counted")
+	}
+}
+
+func memberLabelMessage(chat types.JID, label string, labelTimestamp int64) *events.Message {
+	return &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{Chat: chat, Sender: requesterLid, SenderAlt: requesterPn},
+			Timestamp:     time.Unix(1700000010, 0),
+		},
+		Message: &waE2E.Message{
+			ProtocolMessage: &waE2E.ProtocolMessage{
+				Type: waE2E.ProtocolMessage_GROUP_MEMBER_LABEL_CHANGE.Enum(),
+				MemberLabel: &waE2E.MemberLabel{
+					Label:          proto.String(label),
+					LabelTimestamp: proto.Int64(labelTimestamp),
+				},
+			},
+		},
+	}
+}
+
+// spyGroupMemberLabelStorage records the upserts and deletes.
+type spyGroupMemberLabelStorage struct {
+	*noop.GroupMemberLabelStorage
+	upserted []*storage.GroupMemberLabel
+	batches  [][]*storage.GroupMemberLabel
+	deleted  []string
+}
+
+func (s *spyGroupMemberLabelStorage) UpsertGroupMemberLabel(label *storage.GroupMemberLabel) error {
+	s.upserted = append(s.upserted, label)
+	return nil
+}
+
+func (s *spyGroupMemberLabelStorage) UpsertGroupMemberLabels(labels []*storage.GroupMemberLabel) error {
+	s.batches = append(s.batches, labels)
+	return nil
+}
+
+func (s *spyGroupMemberLabelStorage) DeleteGroupMemberLabel(group types.JID, member types.JID) error {
+	s.deleted = append(s.deleted, group.String()+" "+member.String())
+	return nil
+}
+
+func TestHandleMessageEventGroupMemberLabel(t *testing.T) {
+	st, _, _, _ := newTestHandler()
+	labels := &spyGroupMemberLabelStorage{GroupMemberLabelStorage: noop.NewGroupMemberLabelStorage()}
+	st.storage.GroupMemberLabels = labels
+
+	st.handleMessageEvent(memberLabelMessage(groupJid, "Manager", 1700000001))
+	if len(labels.upserted) != 1 {
+		t.Fatalf("expected one upsert, got %d", len(labels.upserted))
+	}
+	label := labels.upserted[0]
+	if label.GroupJID != groupJid || label.MemberJID != requesterLid {
+		t.Fatalf("unexpected keys %+v", label)
+	}
+	if label.Label != "Manager" || label.Timestamp.Unix() != 1700000001 {
+		t.Fatalf("unexpected label %+v", label)
+	}
+
+	// A removed tag is stored as an empty label
+	st.handleMessageEvent(memberLabelMessage(groupJid, "", 1700000002))
+	if len(labels.upserted) != 2 || labels.upserted[1].Label != "" {
+		t.Fatalf("expected an empty label upsert, got %+v", labels.upserted)
+	}
+
+	// No label timestamp - the message timestamp is used
+	st.handleMessageEvent(memberLabelMessage(groupJid, "Lead", 0))
+	if len(labels.upserted) != 3 || labels.upserted[2].Timestamp.Unix() != 1700000010 {
+		t.Fatalf("expected the message timestamp, got %+v", labels.upserted)
+	}
+
+	// Not a group, other protocol messages, plain messages
+	st.handleMessageEvent(memberLabelMessage(requesterPn, "Manager", 1700000003))
+	revoke := memberLabelMessage(groupJid, "Manager", 1700000003)
+	revoke.Message.ProtocolMessage.Type = waE2E.ProtocolMessage_REVOKE.Enum()
+	st.handleMessageEvent(revoke)
+	st.handleMessageEvent(conversationMessage("hello"))
+	if len(labels.upserted) != 3 {
+		t.Fatalf("expected no more upserts, got %+v", labels.upserted)
+	}
+}
+
+func TestSaveGroupMemberLabelsFromHistory(t *testing.T) {
+	st, _, _, _ := newTestHandler()
+	labels := &spyGroupMemberLabelStorage{GroupMemberLabelStorage: noop.NewGroupMemberLabelStorage()}
+	st.storage.GroupMemberLabels = labels
+
+	conv := &waHistorySync.Conversation{
+		Participant: []*waHistorySync.GroupParticipant{
+			{UserJID: proto.String(requesterLid.String()), MemberLabel: &waE2E.MemberLabel{Label: proto.String("Manager"), LabelTimestamp: proto.Int64(1700000001)}},
+			{UserJID: proto.String(requesterPn.String())},
+		},
+	}
+	st.saveGroupMemberLabelsFromHistory(conv, groupJid)
+	if len(labels.batches) != 1 || len(labels.batches[0]) != 1 {
+		t.Fatalf("expected one batch with one label, got %+v", labels.batches)
+	}
+	label := labels.batches[0][0]
+	if label.GroupJID != groupJid || label.MemberJID != requesterLid || label.Label != "Manager" || label.Timestamp.Unix() != 1700000001 {
+		t.Fatalf("unexpected label %+v", label)
+	}
+
+	// Nothing to save - no batch at all
+	st.saveGroupMemberLabelsFromHistory(&waHistorySync.Conversation{}, groupJid)
+	if len(labels.batches) != 1 {
+		t.Fatalf("expected no extra batch, got %+v", labels.batches)
+	}
+}
+
+func TestHandleGroupMembersLeft(t *testing.T) {
+	st, _, _, _ := newTestHandler()
+	labels := &spyGroupMemberLabelStorage{GroupMemberLabelStorage: noop.NewGroupMemberLabelStorage()}
+	st.storage.GroupMemberLabels = labels
+
+	st.handleGroupMembersLeft(&events.GroupInfo{JID: groupJid, Leave: []types.JID{requesterLid}})
+	if len(labels.deleted) != 1 || labels.deleted[0] != groupJid.String()+" "+requesterLid.String() {
+		t.Fatalf("unexpected deletes %v", labels.deleted)
 	}
 }

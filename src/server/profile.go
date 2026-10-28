@@ -27,7 +27,7 @@ func (s *Server) SetProfileStatus(ctx context.Context, req *__.ProfileStatusRequ
 		return nil, err
 	}
 	status := req.GetStatus()
-	err = cli.SetStatusMessage(ctx, types.SetStatusInput{Text: &status})
+	err = cli.SetStatusMessageIQ(ctx, status)
 	if err != nil {
 		return nil, err
 	}

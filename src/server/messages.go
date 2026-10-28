@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/devlikeapro/gows/gows"
-	waBinary "go.mau.fi/whatsmeow/binary"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/devlikeapro/gows/gows"
+	waBinary "go.mau.fi/whatsmeow/binary"
 
 	"github.com/devlikeapro/gows/media"
 	__ "github.com/devlikeapro/gows/proto"
@@ -17,6 +18,8 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -101,7 +104,30 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 		extra.ID = req.Id
 	}
 
-	if req.GetPollVote() != nil {
+	if fwd := req.GetForward(); fwd != nil {
+		// Forward sends the original message; only contextInfo from above is reused
+		if fwd.GetMessageId() == "" {
+			return nil, status.Error(codes.InvalidArgument, "forward.messageId is required to forward a message")
+		}
+		stored, err := cli.Storage.Messages.GetMessageWithRetries(fwd.GetMessageId())
+		if err != nil {
+			switch {
+			case errors.Is(err, storage.ErrNotFound):
+				return nil, status.Errorf(codes.NotFound, "message not found: '%s'", fwd.GetMessageId())
+			case errors.Is(err, storage.ErrStorageDisabled):
+				return nil, status.Error(codes.FailedPrecondition, "message storage is disabled for this session, there is nothing to forward from")
+			default:
+				return nil, fmt.Errorf("failed to get message to forward '%s': %w", fwd.GetMessageId(), err)
+			}
+		}
+		if stored == nil || stored.Message == nil {
+			return nil, status.Errorf(codes.NotFound, "message not found: '%s'", fwd.GetMessageId())
+		}
+		message, err = gows.BuildForwardedMessage(stored.Message, contextInfo, fwd.GetForce())
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "failed to forward message '%s': %v", fwd.GetMessageId(), err)
+		}
+	} else if req.GetPollVote() != nil {
 		vote := req.PollVote
 		if vote.Options == nil {
 			vote.Options = []string{}
@@ -406,7 +432,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 			)
 
 			if err != nil {
-				cli.Log.Infof("Failed to generate video thumbnail: %v", err)
+				cli.Log.Warnf("Failed to generate video thumbnail: %v", err)
 			}
 
 			var gifPlayback *bool
@@ -454,7 +480,7 @@ func (s *Server) SendMessage(ctx context.Context, req *__.MessageRequest) (*__.M
 			)
 
 			if err != nil {
-				cli.Log.Infof("Failed to generate ptv thumbnail: %v", err)
+				cli.Log.Warnf("Failed to generate ptv thumbnail: %v", err)
 			}
 
 			message.PtvMessage = &waE2E.VideoMessage{
@@ -727,8 +753,7 @@ func (s *Server) EditMessage(ctx context.Context, req *__.EditMessageRequest) (*
 	if err == nil && storedMsg != nil && storedMsg.Message != nil {
 		originalMessage = storedMsg.Message.Message
 	} else if err != nil {
-		var storageDisabledErr storage.StorageDisabledError
-		if !errors.Is(err, storage.ErrNotFound) && !errors.As(err, &storageDisabledErr) {
+		if !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrStorageDisabled) {
 			cli.Log.Warnf("Failed to fetch original message %s for edit: %v", req.MessageId, err)
 		}
 	}

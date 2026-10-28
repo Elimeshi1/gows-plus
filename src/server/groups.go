@@ -264,6 +264,84 @@ func (s *Server) SetGroupMemberAddMode(ctx context.Context, req *__.JidBoolReque
 	return &__.Empty{}, nil
 }
 
+func (s *Server) SetGroupMemberShareHistoryMode(ctx context.Context, req *__.JidBoolRequest) (*__.Empty, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	jid, err := types.ParseJID(req.GetJid())
+	if err != nil {
+		return nil, err
+	}
+	mode := types.GroupMemberShareHistoryModeAdmin
+	if req.GetValue() {
+		mode = types.GroupMemberShareHistoryModeAllMember
+	}
+	err = cli.SetGroupMemberShareHistoryMode(ctx, jid, mode)
+	if err != nil {
+		return nil, err
+	}
+	// No notification is parsed for this property, keep the cached group in sync
+	group, err := cli.Storage.Groups.GetGroup(jid)
+	if err == nil && group != nil {
+		group.MemberShareHistoryMode = mode
+		_ = cli.Storage.Groups.UpsertOneGroup(group)
+	}
+	return &__.Empty{}, nil
+}
+
+func (s *Server) GetGroupMemberLabels(ctx context.Context, req *__.JidRequest) (*__.JsonList, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	jid, err := types.ParseJID(req.GetJid())
+	if err != nil {
+		return nil, err
+	}
+	labels, err := cli.Storage.GroupMemberLabels.GetGroupMemberLabels(jid)
+	if err != nil {
+		return nil, err
+	}
+	return toJsonList(labels)
+}
+
+func (s *Server) GetGroupMemberLabel(ctx context.Context, req *__.GroupMemberRequest) (*__.Json, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	jid, err := types.ParseJID(req.GetJid())
+	if err != nil {
+		return nil, err
+	}
+	member, err := types.ParseJID(req.GetMember())
+	if err != nil {
+		return nil, err
+	}
+	label, err := cli.Storage.GroupMemberLabels.GetGroupMemberLabel(jid, member.ToNonAD())
+	if err != nil {
+		return nil, err
+	}
+	return toJson(label)
+}
+
+func (s *Server) SetGroupMemberLabel(ctx context.Context, req *__.JidStringRequest) (*__.Empty, error) {
+	cli, err := s.Sm.Get(req.GetSession().GetId())
+	if err != nil {
+		return nil, err
+	}
+	jid, err := types.ParseJID(req.GetJid())
+	if err != nil {
+		return nil, err
+	}
+	err = cli.SetGroupMemberLabel(ctx, jid, req.GetValue())
+	if err != nil {
+		return nil, err
+	}
+	return &__.Empty{}, nil
+}
+
 func (s *Server) UpdateGroupParticipants(ctx context.Context, req *__.UpdateParticipantsRequest) (*__.JsonList, error) {
 	cli, err := s.Sm.Get(req.GetSession().GetId())
 	if err != nil {

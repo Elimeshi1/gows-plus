@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"time"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -119,9 +120,11 @@ type ChatFilter struct {
 
 // Label represents a label that can be associated with chats
 type Label struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Color int    `json:"color"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Color    int    `json:"color"`
+	Type     *int   `json:"type,omitempty"`
+	IsActive *bool  `json:"isActive,omitempty"`
 }
 
 // LabelAssociation represents an association between a label and a JID
@@ -135,3 +138,13 @@ type LidmapEntry struct {
 	Lid types.JID `json:"lid"`
 	Pn  types.JID `json:"pn"`
 }
+
+// GroupMemberLabel is a group member tag, keyed by the member JID as received
+type GroupMemberLabel struct {
+	GroupJID  types.JID `json:"groupJid"`
+	MemberJID types.JID `json:"memberJid"` // LID in LID-addressed groups, phone number otherwise
+	Label     string    `json:"label"`     // empty when the tag was removed
+	Timestamp time.Time `json:"timestamp"`
+}
+
+var ErrEmptyGroupMember = errors.New("group member label without a member")

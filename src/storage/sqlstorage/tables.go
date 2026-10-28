@@ -6,6 +6,8 @@ type Table struct {
 	DataField        string
 	OnConflict       []string
 	UpdateOnConflict []string
+	// Optional condition for DO UPDATE; when false the conflicting row is left as is
+	UpdateOnConflictWhere string
 }
 
 var MessageTable = Table{
@@ -22,10 +24,18 @@ var MessageTable = Table{
 	OnConflict: []string{
 		"id",
 	},
+	// is_real must be refreshed: a message first stored before its content was
+	// decrypted is stamped is_real=false, and the re-upsert that brings the real
+	// content only rewrote data, leaving the column stale. GetAllMessages filters
+	// on the column, so such a message stayed invisible forever.
 	UpdateOnConflict: []string{
 		"timestamp",
 		"data",
+		"is_real",
 	},
+	// whatsmeow emits one event per enc child with the same id, so a key-only (SKDM) or other non-real event
+	// can land after the real content - it must never replace a real stored message (#2289)
+	UpdateOnConflictWhere: "NOT (gows_messages.is_real AND NOT EXCLUDED.is_real)",
 }
 
 var GroupTable = Table{
@@ -90,4 +100,25 @@ var LabelAssociationsTable = Table{
 	UpdateOnConflict: []string{
 		"data",
 	},
+}
+
+var GroupMemberLabelsTable = Table{
+	Name: "gows_group_member_labels",
+	Columns: []string{
+		"group_jid",
+		"member_jid",
+		"timestamp",
+		"data",
+	},
+	DataField: "data",
+	OnConflict: []string{
+		"group_jid",
+		"member_jid",
+	},
+	UpdateOnConflict: []string{
+		"timestamp",
+		"data",
+	},
+	// Last write wins - changes can arrive out of order (live message vs history sync)
+	UpdateOnConflictWhere: "EXCLUDED.timestamp >= gows_group_member_labels.timestamp",
 }

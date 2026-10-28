@@ -58,8 +58,10 @@ func BuildStorage(container *sqlstorage.GContainer, gows *GoWS, cfg StorageConfi
 	if cfg.Groups {
 		st.Groups = container.NewGroupStorage()
 		st.Groups = NewGroupCacheStorage(gows, st.Groups, st.ChatEphemeralSetting)
+		st.GroupMemberLabels = container.NewGroupMemberLabelStorage()
 	} else {
 		st.Groups = NewGroupEphemeralOnlyStorage(gows, st.ChatEphemeralSetting)
+		st.GroupMemberLabels = noop.NewGroupMemberLabelStorage()
 	}
 
 	if cfg.Chats {

@@ -1,6 +1,7 @@
 package gows
 
 import (
+	"errors"
 	"time"
 
 	"go.mau.fi/whatsmeow/appstate"
@@ -82,7 +83,7 @@ func (gows *GoWS) BuildEditedMessage(
 			},
 		}
 	default:
-		var contextInfo = ExtractContextInfo(&events.Message{Message: originalMessage})
+		var contextInfo = ExtractContextInfo(originalMessage)
 		message := &waE2E.Message{
 			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 				Text:        proto.String(text),
@@ -163,11 +164,11 @@ func (gows *GoWS) PopulateContextInfoWithMentions(info *waE2E.ContextInfo, menti
 	return info
 }
 
-func ExtractContextInfo(event *events.Message) *waE2E.ContextInfo {
-	if event.Message == nil {
+// ExtractContextInfo returns the ContextInfo of the message content, nil for plain text
+func ExtractContextInfo(msg *waE2E.Message) *waE2E.ContextInfo {
+	if msg == nil {
 		return nil
 	}
-	msg := event.Message
 	switch {
 	case msg.Conversation != nil:
 		return nil
@@ -208,6 +209,103 @@ func ExtractContextInfo(event *events.Message) *waE2E.ContextInfo {
 	}
 }
 
+// SetContextInfo attaches info to the message content, false if it can't carry one
+func SetContextInfo(msg *waE2E.Message, info *waE2E.ContextInfo) bool {
+	if msg == nil {
+		return false
+	}
+	switch {
+	case msg.ExtendedTextMessage != nil:
+		msg.ExtendedTextMessage.ContextInfo = info
+	case msg.ImageMessage != nil:
+		msg.ImageMessage.ContextInfo = info
+	case msg.ContactMessage != nil:
+		msg.ContactMessage.ContextInfo = info
+	case msg.LocationMessage != nil:
+		msg.LocationMessage.ContextInfo = info
+	case msg.VideoMessage != nil:
+		msg.VideoMessage.ContextInfo = info
+	case msg.PtvMessage != nil:
+		msg.PtvMessage.ContextInfo = info
+	case msg.AudioMessage != nil:
+		msg.AudioMessage.ContextInfo = info
+	case msg.DocumentMessage != nil:
+		msg.DocumentMessage.ContextInfo = info
+	case msg.DocumentWithCaptionMessage != nil && msg.DocumentWithCaptionMessage.Message != nil && msg.DocumentWithCaptionMessage.Message.DocumentMessage != nil:
+		msg.DocumentWithCaptionMessage.Message.DocumentMessage.ContextInfo = info
+	case msg.StickerMessage != nil:
+		msg.StickerMessage.ContextInfo = info
+	case msg.ContactsArrayMessage != nil:
+		msg.ContactsArrayMessage.ContextInfo = info
+	case msg.TemplateMessage != nil:
+		msg.TemplateMessage.ContextInfo = info
+	case msg.ListMessage != nil:
+		msg.ListMessage.ContextInfo = info
+	case msg.PollCreationMessage != nil:
+		msg.PollCreationMessage.ContextInfo = info
+	case msg.PollCreationMessageV2 != nil:
+		msg.PollCreationMessageV2.ContextInfo = info
+	case msg.PollCreationMessageV3 != nil:
+		msg.PollCreationMessageV3.ContextInfo = info
+	default:
+		return false
+	}
+	return true
+}
+
+var ErrCannotForward = errors.New("this message type cannot be forwarded")
+
+var ErrCannotForwardPoll = errors.New("a poll cannot be forwarded")
+
+func isPollCreation(msg *waE2E.Message) bool {
+	return msg.GetPollCreationMessage() != nil ||
+		msg.GetPollCreationMessageV2() != nil ||
+		msg.GetPollCreationMessageV3() != nil
+}
+
+// BuildForwardedMessage builds a forwarded copy of original (media keys reused, not re-uploaded).
+// base is mutated and becomes the ContextInfo of the result; the original's quote and mentions are dropped.
+func BuildForwardedMessage(original *events.Message, base *waE2E.ContextInfo, force bool) (*waE2E.Message, error) {
+	if original == nil || original.Message == nil {
+		return nil, ErrCannotForward
+	}
+	// Polls can't be forwarded - the votes' secret belongs to the original
+	if isPollCreation(original.Message) {
+		return nil, ErrCannotForwardPoll
+	}
+	// original.Message is already unwrapped by whatsmeow (view-once, ephemeral, etc)
+	content := proto.Clone(original.Message).(*waE2E.Message)
+	// Device list and message secret belong to the original delivery
+	content.MessageContextInfo = nil
+
+	// Plain text has no ContextInfo - promote it to ExtendedTextMessage
+	if content.Conversation != nil {
+		content.ExtendedTextMessage = &waE2E.ExtendedTextMessage{
+			Text: proto.String(content.GetConversation()),
+		}
+		content.Conversation = nil
+	}
+
+	score := ExtractContextInfo(content).GetForwardingScore()
+	// Own messages are not marked as forwarded (like official clients) unless forced
+	if !original.Info.IsFromMe || force {
+		score++
+	}
+
+	info := base
+	if info == nil {
+		info = &waE2E.ContextInfo{}
+	}
+	if score > 0 {
+		info.IsForwarded = proto.Bool(true)
+		info.ForwardingScore = proto.Uint32(score)
+	}
+	if !SetContextInfo(content, info) {
+		return nil, ErrCannotForward
+	}
+	return content, nil
+}
+
 type Contact struct {
 	DisplayName string
 	Vcard       string
@@ -246,10 +344,18 @@ func BuildContactsMessage(contacts []Contact, contextInfo *waE2E.ContextInfo) (m
 	return message
 }
 
-func BuildContactUpdate(jid types.JID, firstName, lastName string) appstate.PatchInfo {
+func BuildContactUpdate(jid types.JID, lid types.JID, firstName, lastName string) appstate.PatchInfo {
 	fullName := firstName
 	if lastName != "" {
 		fullName = firstName + " " + lastName
+	}
+	action := &waSyncAction.ContactAction{
+		FullName:                 proto.String(fullName),
+		FirstName:                proto.String(firstName),
+		SaveOnPrimaryAddressbook: proto.Bool(true),
+	}
+	if !lid.IsEmpty() {
+		action.LidJID = proto.String(lid.String())
 	}
 
 	return appstate.PatchInfo{
@@ -258,11 +364,7 @@ func BuildContactUpdate(jid types.JID, firstName, lastName string) appstate.Patc
 			Index:   []string{appstate.IndexContact, jid.String()},
 			Version: 2,
 			Value: &waSyncAction.SyncActionValue{
-				ContactAction: &waSyncAction.ContactAction{
-					FullName:                 proto.String(fullName),
-					FirstName:                proto.String(firstName),
-					SaveOnPrimaryAddressbook: proto.Bool(true),
-				},
+				ContactAction: action,
 			},
 		}},
 	}

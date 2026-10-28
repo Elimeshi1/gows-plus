@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+
 	"github.com/devlikeapro/gows/storage"
 	"go.mau.fi/whatsmeow/appstate"
+	"go.mau.fi/whatsmeow/proto/waSyncAction"
 	"go.mau.fi/whatsmeow/types"
 
 	__ "github.com/devlikeapro/gows/proto"
@@ -39,7 +41,11 @@ func (s *Server) UpsertLabel(ctx context.Context, req *__.UpsertLabelRequest) (*
 
 	// Send app state update for label edit
 	label := req.Label
-	patch := appstate.BuildLabelEdit(label.Id, label.Name, label.Color, false)
+	var type_ *waSyncAction.LabelEditAction_ListType
+	if label.Type != nil {
+		type_ = waSyncAction.LabelEditAction_ListType(label.GetType()).Enum()
+	}
+	patch := appstate.BuildLabelEdit(label.Id, label.Name, label.Color, false, type_, label.IsActive)
 	err = cli.SendAppState(ctx, patch)
 	if err != nil {
 		return nil, fmt.Errorf("error upserting label: %w", err)
@@ -56,7 +62,7 @@ func (s *Server) DeleteLabel(ctx context.Context, req *__.DeleteLabelRequest) (*
 
 	// Send app state update for label delete
 	label := req.Label
-	patch := appstate.BuildLabelEdit(label.Id, label.Name, label.Color, true)
+	patch := appstate.BuildLabelEdit(label.Id, label.Name, label.Color, true, nil, nil)
 	err = cli.SendAppState(ctx, patch)
 	if err != nil {
 		return nil, fmt.Errorf("error deleting label: %w", err)
@@ -78,13 +84,21 @@ func (s *Server) GetLabelsByJid(ctx context.Context, req *__.EntityByIdRequest) 
 		return nil, fmt.Errorf("error getting labels by jid: %w", err)
 	}
 	labels, err := cli.Storage.Labels.GetAllLabels()
+	if err != nil {
+		return nil, fmt.Errorf("error getting labels: %w", err)
+	}
 	labelById := make(map[string]*storage.Label)
 	for _, label := range labels {
 		labelById[label.ID] = label
 	}
 	labelsForJid := make([]*storage.Label, 0)
 	for _, labelId := range labelIds {
-		labelsForJid = append(labelsForJid, labelById[labelId])
+		// Skip associations whose label is not synced yet
+		label, ok := labelById[labelId]
+		if !ok {
+			continue
+		}
+		labelsForJid = append(labelsForJid, label)
 	}
 	response, err := toJsonList(labelsForJid)
 	if err != nil {
