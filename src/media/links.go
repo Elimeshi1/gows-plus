@@ -3,12 +3,13 @@ package media
 import (
 	"context"
 	"fmt"
-	"github.com/devlikeapro/goscraper"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/devlikeapro/goscraper"
 )
 
 var UrlRegex = `(http(s)?:\/\/.)(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)`
@@ -41,8 +42,8 @@ type LinkPreview struct {
 }
 
 var ScrapeHeaders = map[string]string{
-	"User-Agent": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-	"Accept":     "Mozilla/5.0 (Windows; Windows NT 6.3; Win64; x64) Gecko/20100101 Firefox/67.7",
+	"Accept":     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+	"User-Agent": "Mozilla/5.0 (Windows; Windows NT 6.3; Win64; x64) Gecko/20100101 Firefox/67.7",
 }
 
 // GoscraperFetchPreview fetches a preview of a URL using goscraper.
